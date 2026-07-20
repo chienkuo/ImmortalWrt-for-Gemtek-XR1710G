@@ -1,5 +1,5 @@
 diff --git a/drivers/net/ethernet/airoha/airoha_eth.c b/drivers/net/ethernet/airoha/airoha_eth.c
-index ec6a744..84313eb 100644
+index d7f443c..0fac2c2 100644
 --- a/drivers/net/ethernet/airoha/airoha_eth.c
 +++ b/drivers/net/ethernet/airoha/airoha_eth.c
 @@ -2975,6 +2975,8 @@ static int airoha_dev_setup_tc_block(struct net_device *dev,
@@ -20,23 +20,23 @@ index ec6a744..84313eb 100644
  	case FLOW_BLOCK_UNBIND:
  		block_cb = flow_block_cb_lookup(f->block, cb, dev);
 diff --git a/drivers/net/ethernet/airoha/airoha_eth.h b/drivers/net/ethernet/airoha/airoha_eth.h
-index 9693d61..3240701 100644
+index 2765244..3529529 100644
 --- a/drivers/net/ethernet/airoha/airoha_eth.h
 +++ b/drivers/net/ethernet/airoha/airoha_eth.h
-@@ -685,6 +685,8 @@ bool airoha_is_valid_gdm_dev(struct airoha_eth *eth,
+@@ -684,6 +684,9 @@ bool airoha_is_valid_gdm_dev(struct airoha_eth *eth,
+ 			     struct airoha_gdm_dev *dev);
 
  void airoha_ppe_set_cpu_port(struct airoha_gdm_dev *dev, u8 ppe_id, u8 fport);
- void airoha_ppe_set_xmit_frame_size(struct airoha_gdm_dev *dev);
 +int airoha_ppe_offload_setup(struct airoha_eth *eth);
 +void airoha_ppe_start_offload(struct airoha_eth *eth);
  bool airoha_ppe_is_enabled(struct airoha_eth *eth, int index);
  void airoha_ppe_check_skb(struct airoha_ppe_dev *dev, struct sk_buff *skb,
  			  u16 hash, bool rx_wlan);
 diff --git a/drivers/net/ethernet/airoha/airoha_ppe.c b/drivers/net/ethernet/airoha/airoha_ppe.c
-index 83010c9..a17066c 100644
+index 60f4bcb..f206b69 100644
 --- a/drivers/net/ethernet/airoha/airoha_ppe.c
 +++ b/drivers/net/ethernet/airoha/airoha_ppe.c
-@@ -98,6 +98,19 @@ void airoha_ppe_set_cpu_port(struct airoha_gdm_dev *dev, u8 ppe_id, u8 fport)
+@@ -98,6 +98,18 @@ void airoha_ppe_set_cpu_port(struct airoha_gdm_dev *dev, u8 ppe_id, u8 fport)
  		      __field_prep(DFT_CPORT_MASK(fport), fe_cpu_port));
  }
 
@@ -52,10 +52,10 @@ index 83010c9..a17066c 100644
 +}
 +EXPORT_SYMBOL_GPL(airoha_ppe_start_offload);
 +
- void airoha_ppe_set_xmit_frame_size(struct airoha_gdm_dev *dev)
+ static void airoha_ppe_hw_init(struct airoha_ppe *ppe)
  {
- 	struct airoha_gdm_port *port = dev->port;
-@@ -1407,7 +1420,7 @@ int airoha_ppe_flow_offload_cmd(struct airoha_eth *eth, void *type_data)
+ 	u32 sram_ppe_num_data_entries = PPE_SRAM_NUM_ENTRIES, sram_num_entries;
+@@ -1407,7 +1419,7 @@ static int airoha_ppe_wait_for_npu_init(struct airoha_eth *eth)
  	return err;
  }
 
@@ -64,8 +64,11 @@ index 83010c9..a17066c 100644
  {
  	struct airoha_npu *npu = airoha_ppe_npu_get(eth);
  	struct airoha_ppe *ppe = eth->ppe;
-@@ -1443,6 +1456,7 @@ static int airoha_ppe_offload_setup(struct airoha_eth *eth)
+@@ -1446,6 +1458,7 @@ error_npu_put:
 
  	return err;
  }
 +EXPORT_SYMBOL_GPL(airoha_ppe_offload_setup);
+
+ int airoha_ppe_setup_tc_block_cb(struct airoha_ppe_dev *dev, void *type_data)
+ {
