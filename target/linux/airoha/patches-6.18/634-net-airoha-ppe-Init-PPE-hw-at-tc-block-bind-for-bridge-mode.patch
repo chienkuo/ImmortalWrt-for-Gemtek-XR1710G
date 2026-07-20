@@ -9,7 +9,7 @@ index ec6a744..84313eb 100644
 +	struct airoha_gdm_dev *gdm_dev = netdev_priv(dev);
 +	struct airoha_eth *eth = gdm_dev->eth;
  	struct flow_block_cb *block_cb;
- 
+
  	if (f->binder_type != FLOW_BLOCK_BINDER_TYPE_CLSACT_INGRESS)
 @@ -2995,6 +2997,7 @@ static int airoha_dev_setup_tc_block(struct net_device *dev,
  		flow_block_cb_incref(block_cb);
@@ -23,10 +23,11 @@ diff --git a/drivers/net/ethernet/airoha/airoha_eth.h b/drivers/net/ethernet/air
 index 9693d61..3240701 100644
 --- a/drivers/net/ethernet/airoha/airoha_eth.h
 +++ b/drivers/net/ethernet/airoha/airoha_eth.h
-@@ -685,6 +685,7 @@ bool airoha_is_valid_gdm_dev(struct airoha_eth *eth,
- 
+@@ -685,6 +685,8 @@ bool airoha_is_valid_gdm_dev(struct airoha_eth *eth,
+
  void airoha_ppe_set_cpu_port(struct airoha_gdm_dev *dev, u8 ppe_id, u8 fport);
  void airoha_ppe_set_xmit_frame_size(struct airoha_gdm_dev *dev);
++int airoha_ppe_offload_setup(struct airoha_eth *eth);
 +void airoha_ppe_start_offload(struct airoha_eth *eth);
  bool airoha_ppe_is_enabled(struct airoha_eth *eth, int index);
  void airoha_ppe_check_skb(struct airoha_ppe_dev *dev, struct sk_buff *skb,
@@ -38,7 +39,7 @@ index 83010c9..a17066c 100644
 @@ -98,6 +98,19 @@ void airoha_ppe_set_cpu_port(struct airoha_gdm_dev *dev, u8 ppe_id, u8 fport)
  		      __field_prep(DFT_CPORT_MASK(fport), fe_cpu_port));
  }
- 
+
 +void airoha_ppe_start_offload(struct airoha_eth *eth)
 +{
 +	if (!test_bit(DEV_STATE_REGISTERED, &eth->state))
@@ -51,7 +52,20 @@ index 83010c9..a17066c 100644
 +}
 +EXPORT_SYMBOL_GPL(airoha_ppe_start_offload);
 +
-+
  void airoha_ppe_set_xmit_frame_size(struct airoha_gdm_dev *dev)
  {
  	struct airoha_gdm_port *port = dev->port;
+@@ -1407,7 +1420,7 @@ int airoha_ppe_flow_offload_cmd(struct airoha_eth *eth, void *type_data)
+ 	return err;
+ }
+
+-static int airoha_ppe_offload_setup(struct airoha_eth *eth)
++int airoha_ppe_offload_setup(struct airoha_eth *eth)
+ {
+ 	struct airoha_npu *npu = airoha_ppe_npu_get(eth);
+ 	struct airoha_ppe *ppe = eth->ppe;
+@@ -1443,6 +1456,7 @@ static int airoha_ppe_offload_setup(struct airoha_eth *eth)
+
+ 	return err;
+ }
++EXPORT_SYMBOL_GPL(airoha_ppe_offload_setup);

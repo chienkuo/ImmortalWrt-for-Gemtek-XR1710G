@@ -58,9 +58,9 @@ index 6ad91ca..e52c4f8 100644
  
  #define REG_PPE_MTU_BASE(_n)			(((_n) ? PPE2_BASE : PPE1_BASE) + 0x304)
 -#define REG_PPE_MTU(_m, _n)			(REG_PPE_MTU_BASE(_m) + ((_n) << 2))
--#define FP1_EGRESS_MTU_MASK			GENMASK(29, 16)
--#define FP0_EGRESS_MTU_MASK			GENMASK(13, 0)
 +#define REG_PPE_MTU(_m, _n)			(REG_PPE_MTU_BASE(_m) + (((_n) / 2) << 2))
+ #define FP0_EGRESS_MTU_MASK			GENMASK(13, 0)
+ #define FP1_EGRESS_MTU_MASK			GENMASK(29, 16)
 +#define FP_EGRESS_MTU_MASK(_n)			GENMASK(13 + (((_n) % 2) << 4), ((_n) % 2) << 4)
  
  #define REG_PPE_RAM_CTRL(_n)			(((_n) ? PPE2_BASE : PPE1_BASE) + 0x31c)
