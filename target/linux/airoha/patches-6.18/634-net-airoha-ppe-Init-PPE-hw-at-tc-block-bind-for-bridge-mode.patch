@@ -23,7 +23,7 @@ Signed-off-by: Gilly <gilly@example.com>
 
 --- a/drivers/net/ethernet/airoha/airoha_eth.c
 +++ b/drivers/net/ethernet/airoha/airoha_eth.c
-@@ -3328,6 +3328,8 @@ static int airoha_dev_setup_tc_block(struct net_device *dev,
+@@ -3328,7 +3328,9 @@ static int airoha_dev_setup_tc_block(struct net_device *dev,
  	struct flow_block_offload *f)
  {
  	flow_setup_cb_t *cb = airoha_dev_setup_tc_block_cb;
@@ -49,7 +49,7 @@ Signed-off-by: Gilly <gilly@example.com>
  		block_cb = flow_block_cb_lookup(f->block, cb, dev);
 --- a/drivers/net/ethernet/airoha/airoha_eth.h
 +++ b/drivers/net/ethernet/airoha/airoha_eth.h
-@@ -718,6 +718,8 @@ int airoha_ppe_setup_tc_block_cb(struct airoha_ppe_dev *dev, void *type_data);
+@@ -718,3 +718,5 @@ int airoha_ppe_setup_tc_block_cb(struct airoha_ppe_dev *dev, void *type_data);
 +void airoha_ppe_start_offload(struct airoha_eth *eth);
 +int airoha_ppe_offload_setup(struct airoha_eth *eth);
  int airoha_ppe_init(struct airoha_eth *eth);
@@ -57,7 +57,7 @@ Signed-off-by: Gilly <gilly@example.com>
  void airoha_ppe_init_upd_mem(struct airoha_gdm_port *port);
 --- a/drivers/net/ethernet/airoha/airoha_ppe.c
 +++ b/drivers/net/ethernet/airoha/airoha_ppe.c
-@@ -3033,6 +3033,30 @@ EXPORT_SYMBOL_GPL(airoha_ppe_put_dev);
+@@ -3033,5 +3033,27 @@ EXPORT_SYMBOL_GPL(airoha_ppe_put_dev);
  
  /**
 + * airoha_ppe_start_offload - eagerly initialize PPE hardware offload
