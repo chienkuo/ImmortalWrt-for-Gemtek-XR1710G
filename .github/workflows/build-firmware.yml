@@ -71,7 +71,12 @@ jobs:
 
       - name: Build Firmware
         run: |
-          make -j2 world 2>&1 | tee build.log
+          set -o pipefail
+          if ! make -j2 world 2>&1 | tee build.log; then
+            echo "=== Parallel build failed, re-running with V=sc to expose real error ==="
+            make -j1 V=sc 2>&1 | tee -a build.log
+            exit 1
+          fi
 
       - name: Check build status
         run: |
