@@ -16,15 +16,15 @@ is loaded by ~12s into boot; fw4 runs at ~25-40s, so the NPU is always ready.
 
 Signed-off-by: Gilly <gilly@example.com>
 ---
- drivers/net/ethernet/airoha/airoha_eth.c | 11 ++++++++-
+ drivers/net/ethernet/airoha/airoha_eth.c |  9 +++++++++
  drivers/net/ethernet/airoha/airoha_eth.h |  2 ++
- drivers/net/ethernet/airoha/airoha_ppe.c | 29 +++++++++++++++++++++++--
- 3 files changed, 39 insertions(+), 3 deletions(-)
+ drivers/net/ethernet/airoha/airoha_ppe.c | 25 ++++++++++++++++++++++++-
+ 3 files changed, 35 insertions(+), 1 deletion(-)
 
 --- a/drivers/net/ethernet/airoha/airoha_eth.c
 +++ b/drivers/net/ethernet/airoha/airoha_eth.c
-@@ -3328,7 +3328,9 @@ static int airoha_dev_setup_tc_block(struct net_device *dev,
- 	struct flow_block_offload *f)
+@@ -3002,7 +3002,9 @@
+ 			     struct flow_block_offload *f)
  {
  	flow_setup_cb_t *cb = airoha_dev_setup_tc_block_cb;
 +	struct airoha_gdm_dev *gdm_dev = netdev_priv(dev);
@@ -33,7 +33,7 @@ Signed-off-by: Gilly <gilly@example.com>
  	struct flow_block_cb *block_cb;
  
  	if (f->binder_type != FLOW_BLOCK_BINDER_TYPE_CLSACT_INGRESS)
-@@ -3351,6 +3353,13 @@ static int airoha_dev_setup_tc_block(struct net_device *dev,
+@@ -3023,6 +3025,13 @@
  		flow_block_cb_incref(block_cb);
  		flow_block_cb_add(block_cb, f);
  		list_add_tail(&block_cb->driver_list, &block_cb_list);
@@ -44,22 +44,44 @@ Signed-off-by: Gilly <gilly@example.com>
 +	 * would never fire. */
 +	airoha_ppe_start_offload(eth);
 +
- 	return 0;
+ 		return 0;
  	case FLOW_BLOCK_UNBIND:
  		block_cb = flow_block_cb_lookup(f->block, cb, dev);
 --- a/drivers/net/ethernet/airoha/airoha_eth.h
 +++ b/drivers/net/ethernet/airoha/airoha_eth.h
-@@ -718,3 +718,5 @@ int airoha_ppe_setup_tc_block_cb(struct airoha_ppe_dev *dev, void *type_data);
+@@ -685,6 +685,8 @@
+ void airoha_ppe_check_skb(struct airoha_ppe_dev *dev, struct sk_buff *skb,
+ 			  u16 hash, bool rx_wlan);
+ int airoha_ppe_setup_tc_block_cb(struct airoha_ppe_dev *dev, void *type_data);
 +void airoha_ppe_start_offload(struct airoha_eth *eth);
 +int airoha_ppe_offload_setup(struct airoha_eth *eth);
  int airoha_ppe_init(struct airoha_eth *eth);
  void airoha_ppe_deinit(struct airoha_eth *eth);
- void airoha_ppe_init_upd_mem(struct airoha_gdm_port *port);
+ void airoha_ppe_init_upd_mem(struct airoha_gdm_dev *dev, const u8 *addr);
 --- a/drivers/net/ethernet/airoha/airoha_ppe.c
 +++ b/drivers/net/ethernet/airoha/airoha_ppe.c
-@@ -3033,5 +3033,27 @@ EXPORT_SYMBOL_GPL(airoha_ppe_put_dev);
+@@ -1403,7 +1403,7 @@
+ 	return err;
+ }
  
- /**
+-static int airoha_ppe_offload_setup(struct airoha_eth *eth)
++int airoha_ppe_offload_setup(struct airoha_eth *eth)
+ {
+ 	struct airoha_npu *npu = airoha_ppe_npu_get(eth);
+ 	struct airoha_ppe *ppe = eth->ppe;
+@@ -1442,6 +1442,7 @@
+ 
+ 	return err;
+ }
++EXPORT_SYMBOL_GPL(airoha_ppe_offload_setup);
+ 
+ int airoha_ppe_setup_tc_block_cb(struct airoha_ppe_dev *dev, void *type_data)
+ {
+@@ -1562,6 +1563,28 @@
+ }
+ EXPORT_SYMBOL_GPL(airoha_ppe_put_dev);
+ 
++/**
 + * airoha_ppe_start_offload - eagerly initialize PPE hardware offload
 + * @eth: airoha ethernet device
 + *
@@ -81,26 +103,6 @@ Signed-off-by: Gilly <gilly@example.com>
 +}
 +EXPORT_SYMBOL_GPL(airoha_ppe_start_offload);
 +
-+/**
-  * airoha_ppe_init - initialize PPE subsystem
-  * @eth: airoha ethernet device
-  *
-@@ -3100,7 +3124,7 @@ static int airoha_ppe_wait_for_npu_init(struct airoha_eth *eth)
- 	return err;
- }
- 
--static int airoha_ppe_offload_setup(struct airoha_eth *eth)
-+int airoha_ppe_offload_setup(struct airoha_eth *eth)
+ int airoha_ppe_init(struct airoha_eth *eth)
  {
- 	struct airoha_npu *npu = airoha_ppe_npu_get(eth);
- 	struct airoha_ppe *ppe = eth->ppe;
-@@ -3140,6 +3164,9 @@ error_npu_put:
- 	airoha_npu_put(npu);
- 
- 	return err;
-+}
-+EXPORT_SYMBOL_GPL(airoha_ppe_offload_setup);
-+
- /**
-  * airoha_ppe_init - initialize PPE subsystem
-  * @eth: airoha ethernet device
+ 	int foe_size, err, ppe_num_stats_entries;
