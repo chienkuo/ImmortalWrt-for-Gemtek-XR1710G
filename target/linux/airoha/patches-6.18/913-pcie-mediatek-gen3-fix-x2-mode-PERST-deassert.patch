@@ -123,10 +123,10 @@ Signed-off-by: Kenneth Kasilag <kenneth@kasilag.me>
 
  		/* Clear SETTING_REG bit 13 for x2 mode on both MACs */
  		val = readl_relaxed(pcie->base + PCIE_SETTING_REG);
-@@ -1109,59 +1133,16 @@ static int mtk_pcie_en7581_power_up(stru
+@@ -1109,57 +1133,57 @@ static int mtk_pcie_en7581_power_up(stru
  		if (pcie->sister_base)
  			writel_relaxed(0x1018020f, pcie->sister_base + 0x338);
-
+ 
 -		/* Deassert PERST for all ports - link training starts */
 +		/* Deassert PERST on selected port - link training starts */
  		msleep(10);
@@ -135,59 +135,57 @@ Signed-off-by: Kenneth Kasilag <kenneth@kasilag.me>
 -				   BIT(16) | BIT(26) | BIT(29));
 +				   perst_mask,
 +				   perst_mask);
-
+ 
  		/* Wait for link training to complete */
 -		msleep(800);
--
--		/*
--		 * Check if link trained at Gen3. If not, toggle serdes
--		 * reset to force MAC to re-discover PHY Gen3 capability.
--		 * Without this, MAC only advertises Gen1-Gen2 in LnkCap2.
--		 */
--		val = readl_relaxed(pcie->base + PCIE_LINK_STATUS_REG);
--		if (val & PCIE_PORT_LINKUP) {
--			void __iomem *cfg = pcie->base + PCIE_CFG_OFFSET_ADDR;
--			u8 cap_ptr;
--			int speed = 0;
--
--			/* Walk PCI cap list to find PCIe cap (ID=0x10) */
--			cap_ptr = readl_relaxed(cfg + PCI_CAPABILITY_LIST) & 0xFF;
--			while (cap_ptr >= 0x40) {
--				u32 hdr = readl_relaxed(cfg + cap_ptr);
--				if ((hdr & 0xFF) == PCI_CAP_ID_EXP) {
--					u32 lnk = readl_relaxed(cfg + cap_ptr + PCI_EXP_LNKCTL);
--					speed = (lnk >> 16) & PCI_EXP_LNKSTA_CLS;
--					break;
--				}
--				cap_ptr = (hdr >> 8) & 0xFF;
--			}
--
--			if (speed > 0 && speed < 3) {
--				dev_info(dev, "x2: link at Gen%d, toggling serdes for Gen3\n", speed);
--				regmap_update_bits(pcie->np_scu, NP_SCU_LANE_CFG0,
--						   BIT(7) | BIT(8), BIT(7) | BIT(8));
--				regmap_update_bits(pcie->np_scu, NP_SCU_LANE_CFG1,
--						   BIT(26) | BIT(27), BIT(26) | BIT(27));
--				msleep(1000);
--				regmap_update_bits(pcie->np_scu, NP_SCU_LANE_CFG0,
--						   BIT(7) | BIT(8), 0);
--				regmap_update_bits(pcie->np_scu, NP_SCU_LANE_CFG1,
--						   BIT(26) | BIT(27), 0);
--				msleep(2000);
--				dev_info(dev, "x2: serdes toggle done, link retraining\n");
--			} else {
--				dev_info(dev, "x2: link at Gen%d, no toggle needed\n", speed);
--			}
--		} else {
--			dev_info(dev, "x2: link not up after init, skipping speed check\n");
--		}
 +		msleep(1000);
-
+ 
+ 		/*
+ 		 * Check if link trained at Gen3. If not, toggle serdes
+ 		 * reset to force MAC to re-discover PHY Gen3 capability.
+ 		 * Without this, MAC only advertises Gen1-Gen2 in LnkCap2.
+ 		 */
+ 		val = readl_relaxed(pcie->base + PCIE_LINK_STATUS_REG);
+ 		if (val & PCIE_PORT_LINKUP) {
+ 			void __iomem *cfg = pcie->base + PCIE_CFG_OFFSET_ADDR;
+ 			u8 cap_ptr;
+ 			int speed = 0;
+ 
+ 			/* Walk PCI cap list to find PCIe cap (ID=0x10) */
+ 			cap_ptr = readl_relaxed(cfg + PCI_CAPABILITY_LIST) & 0xFF;
+ 			while (cap_ptr >= 0x40) {
+ 				u32 hdr = readl_relaxed(cfg + cap_ptr);
+ 				if ((hdr & 0xFF) == PCI_CAP_ID_EXP) {
+ 					u32 lnk = readl_relaxed(cfg + cap_ptr + PCI_EXP_LNKCTL);
+ 					speed = (lnk >> 16) & PCI_EXP_LNKSTA_CLS;
+ 					break;
+ 				}
+ 				cap_ptr = (hdr >> 8) & 0xFF;
+ 			}
+ 
+ 			if (speed > 0 && speed < 3) {
+ 				dev_info(dev, "x2: link at Gen%d, toggling serdes for Gen3\n", speed);
+ 				regmap_update_bits(pcie->np_scu, NP_SCU_LANE_CFG0,
+ 						   BIT(7) | BIT(8), BIT(7) | BIT(8));
+ 				regmap_update_bits(pcie->np_scu, NP_SCU_LANE_CFG1,
+ 						   BIT(26) | BIT(27), BIT(26) | BIT(27));
+ 				msleep(1000);
+ 				regmap_update_bits(pcie->np_scu, NP_SCU_LANE_CFG0,
+ 						   BIT(7) | BIT(8), 0);
+ 				regmap_update_bits(pcie->np_scu, NP_SCU_LANE_CFG1,
+ 						   BIT(26) | BIT(27), 0);
+ 				msleep(2000);
+ 				dev_info(dev, "x2: serdes toggle done, link retraining\n");
+ 			} else {
+ 				dev_info(dev, "x2: link at Gen%d, no toggle needed\n", speed);
+ 			}
+ 		} else {
+ 			dev_info(dev, "x2: link not up after init, skipping speed check\n");
+ 		}
+ 
 -		dev_info(dev, "x2: init complete, PERST deasserted\n");
 +		dev_info(dev, "x2: init complete\n");
  	} else {
- 		/*
- 		 * Non-x2 mode: standard EQ config then deassert PERST.
 @@ -1178,11 +1159,11 @@ static int mtk_pcie_en7581_power_up(stru
  		      FIELD_PREP(PCIE_K_FINETUNE_MAX, 0xf);
  		writel_relaxed(val, pcie->base + PCIE_PIPE4_PIE8_REG);

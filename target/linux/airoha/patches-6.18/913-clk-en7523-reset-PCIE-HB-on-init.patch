@@ -12,12 +12,13 @@ Signed-off-by: Christian Marangi <ansuelsmth@gmail.com>
 
 --- a/drivers/clk/clk-en7523.c
 +++ b/drivers/clk/clk-en7523.c
-@@ -1147,6 +1147,10 @@ static int en7581_clk_hw_init(struct pla
+@@ -1147,6 +1147,11 @@ static int en7581_clk_hw_init(struct pla
  	regmap_update_bits(clk_map, REG_NP_SCU_PCIC, REG_PCIE_CTRL,
  			   FIELD_PREP(REG_PCIE_CTRL, 3));
  
 +	/* Reset PCIE_HB */
 +	regmap_set_bits(clk_map, REG_RST_CTRL1, BIT(29));
++	usleep_range(10000, 15000);
 +	regmap_clear_bits(clk_map, REG_RST_CTRL1, BIT(29));
 +
  	return en7581_reset_register(&pdev->dev, clk_map, en7581_rst_map,
