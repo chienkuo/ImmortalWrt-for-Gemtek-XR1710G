@@ -73,7 +73,7 @@ Signed-off-by: Kenneth Kasilag <kenneth@kasilag.me>
  	err = phy_set_mode(pcie->phy, PHY_MODE_PCIE);
  	if (err) {
  		dev_err(dev, "failed to set PHY mode\n");
-@@ -1043,26 +1073,22 @@ static int mtk_pcie_en7581_power_up(stru
+@@ -1043,26 +1073,26 @@ static int mtk_pcie_en7581_power_up(stru
  	pm_runtime_get_sync(dev);
 
  	/*
@@ -86,13 +86,17 @@ Signed-off-by: Kenneth Kasilag <kenneth@kasilag.me>
  	 */
  	if (pcie->x2_mode && pcie->np_scu) {
 -		/* Assert serdes reset on all lanes */
-+		/* Assert serdes reset on lanes 0 and 1 */
++		/* Assert serdes reset on all lanes (HW quirk: PCIE2_RST needed
++		 * even for x2 mode on lanes 0+1 - interconnected serdes blocks)
++		 */
  		regmap_update_bits(pcie->np_scu, NP_SCU_LANE_CFG1,
 -				   BIT(26) | BIT(27), BIT(26) | BIT(27));
 -		regmap_update_bits(pcie->np_scu, NP_SCU_LANE_CFG0,
 -				   BIT(27), BIT(27));
 +				   NP_SCU_PCIE0_RST | NP_SCU_PCIE1_RST,
 +				   NP_SCU_PCIE0_RST | NP_SCU_PCIE1_RST);
++		regmap_update_bits(pcie->np_scu, NP_SCU_LANE_CFG0,
++				   NP_SCU_PCIE2_RST, NP_SCU_PCIE2_RST);
  		msleep(100);
 
 -		/* Assert PERST on all ports */
@@ -109,21 +113,23 @@ Signed-off-by: Kenneth Kasilag <kenneth@kasilag.me>
  	}
 
  	err = clk_bulk_prepare_enable(pcie->num_clks, pcie->clks);
-@@ -1085,11 +1111,9 @@ static int mtk_pcie_en7581_power_up(stru
+@@ -1085,11 +1111,11 @@ static int mtk_pcie_en7581_power_up(stru
  		 */
  		msleep(30);
 
 -		/* Deassert serdes reset on all lanes */
-+		/* Deassert serdes reset on lanes 0 and 1 */
++		/* Deassert serdes reset on all lanes */
  		regmap_update_bits(pcie->np_scu, NP_SCU_LANE_CFG1,
 -				   BIT(26) | BIT(27), 0);
 -		regmap_update_bits(pcie->np_scu, NP_SCU_LANE_CFG0,
 -				   BIT(27), 0);
 +				   NP_SCU_PCIE0_RST | NP_SCU_PCIE1_RST, 0);
++		regmap_update_bits(pcie->np_scu, NP_SCU_LANE_CFG0,
++				   NP_SCU_PCIE2_RST, 0);
 
  		/* Clear SETTING_REG bit 13 for x2 mode on both MACs */
  		val = readl_relaxed(pcie->base + PCIE_SETTING_REG);
-@@ -1109,57 +1133,57 @@ static int mtk_pcie_en7581_power_up(stru
+@@ -1109,57 +1133,59 @@ static int mtk_pcie_en7581_power_up(stru
  		if (pcie->sister_base)
  			writel_relaxed(0x1018020f, pcie->sister_base + 0x338);
  
@@ -166,14 +172,20 @@ Signed-off-by: Kenneth Kasilag <kenneth@kasilag.me>
  			if (speed > 0 && speed < 3) {
  				dev_info(dev, "x2: link at Gen%d, toggling serdes for Gen3\n", speed);
  				regmap_update_bits(pcie->np_scu, NP_SCU_LANE_CFG0,
- 						   BIT(7) | BIT(8), BIT(7) | BIT(8));
+-						   BIT(7) | BIT(8), BIT(7) | BIT(8));
++						   NP_SCU_XSI_MAC_RST | NP_SCU_XSI_PHY_RST,
++						   NP_SCU_XSI_MAC_RST | NP_SCU_XSI_PHY_RST);
  				regmap_update_bits(pcie->np_scu, NP_SCU_LANE_CFG1,
- 						   BIT(26) | BIT(27), BIT(26) | BIT(27));
+-						   BIT(26) | BIT(27), BIT(26) | BIT(27));
++						   NP_SCU_PCIE0_RST | NP_SCU_PCIE1_RST,
++						   NP_SCU_PCIE0_RST | NP_SCU_PCIE1_RST);
  				msleep(1000);
  				regmap_update_bits(pcie->np_scu, NP_SCU_LANE_CFG0,
- 						   BIT(7) | BIT(8), 0);
+-						   BIT(7) | BIT(8), 0);
++						   NP_SCU_XSI_MAC_RST | NP_SCU_XSI_PHY_RST, 0);
  				regmap_update_bits(pcie->np_scu, NP_SCU_LANE_CFG1,
- 						   BIT(26) | BIT(27), 0);
+-						   BIT(26) | BIT(27), 0);
++						   NP_SCU_PCIE0_RST | NP_SCU_PCIE1_RST, 0);
  				msleep(2000);
  				dev_info(dev, "x2: serdes toggle done, link retraining\n");
  			} else {
