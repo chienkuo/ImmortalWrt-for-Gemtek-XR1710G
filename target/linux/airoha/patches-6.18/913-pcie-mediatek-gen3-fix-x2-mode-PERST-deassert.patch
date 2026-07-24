@@ -129,7 +129,7 @@ Signed-off-by: Kenneth Kasilag <kenneth@kasilag.me>
 
  		/* Clear SETTING_REG bit 13 for x2 mode on both MACs */
  		val = readl_relaxed(pcie->base + PCIE_SETTING_REG);
-@@ -1109,57 +1133,59 @@ static int mtk_pcie_en7581_power_up(stru
+@@ -1109,57 +1133,71 @@ static int mtk_pcie_en7581_power_up(stru
  		if (pcie->sister_base)
  			writel_relaxed(0x1018020f, pcie->sister_base + 0x338);
  
@@ -171,6 +171,12 @@ Signed-off-by: Kenneth Kasilag <kenneth@kasilag.me>
  
  			if (speed > 0 && speed < 3) {
  				dev_info(dev, "x2: link at Gen%d, toggling serdes for Gen3\n", speed);
++
++				/* Assert PERST to hold endpoint in reset during toggle */
++				regmap_update_bits(pcie->np_scu, NP_SCU_CTRL_REG,
++						   perst_mask, 0);
++				msleep(10);
++
  				regmap_update_bits(pcie->np_scu, NP_SCU_LANE_CFG0,
 -						   BIT(7) | BIT(8), BIT(7) | BIT(8));
 +						   NP_SCU_XSI_MAC_RST | NP_SCU_XSI_PHY_RST,
@@ -187,6 +193,12 @@ Signed-off-by: Kenneth Kasilag <kenneth@kasilag.me>
 -						   BIT(26) | BIT(27), 0);
 +						   NP_SCU_PCIE0_RST | NP_SCU_PCIE1_RST, 0);
  				msleep(2000);
++
++				/* Deassert PERST - endpoint reinitializes on Gen3 link */
++				regmap_update_bits(pcie->np_scu, NP_SCU_CTRL_REG,
++						   perst_mask, perst_mask);
++				msleep(100);
++
  				dev_info(dev, "x2: serdes toggle done, link retraining\n");
  			} else {
  				dev_info(dev, "x2: link at Gen%d, no toggle needed\n", speed);
