@@ -8,8 +8,7 @@
 #include "an7581-npu-mt7996.dtsi"
 / {
 	model = "Gemtek XR1710G";
-	compatible = "econet,xr1710g-ubi", "gemtek,xr1710g-ubi",
-		     "econet,xr1710g", "gemtek,xr1710g",
+	compatible = "gemtek,xr1710g-ubi",
 		     "airoha,an7581", "airoha,en7581";
 	aliases {
 		serial0 = &uart1;
