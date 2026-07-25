@@ -32,6 +32,7 @@ platform_do_upgrade() {
 	local board=$(board_name)
 
 	case "$board" in
+		econet,xr1710g-ubi|\
 		gemtek,w1700k-ubi|\
 		gemtek,xr1710g-ubi|\
 		nokia,xg-040g-md-ubi)
