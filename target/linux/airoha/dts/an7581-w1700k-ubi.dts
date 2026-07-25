@@ -249,7 +249,6 @@
 	num-lanes = <2>;
 
 	airoha,scu = <&scuclk>;
-	airoha,np-scu = <&scuclk>;
 	airoha,x2-mode;
 
 	pinctrl-names = "default";
