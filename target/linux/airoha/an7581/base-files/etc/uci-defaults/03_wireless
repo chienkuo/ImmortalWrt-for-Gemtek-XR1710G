@@ -41,6 +41,34 @@ gemtek,w1700k-ubi)
 	uci set wireless.radio2.txpower='28'
 	uci set wireless.radio2.disabled='0'
 
+	# --- WiFi interfaces: bridge all radios to LAN ---
+	uci set wireless.default_radio0=wifi-iface
+	uci set wireless.default_radio0.device='radio0'
+	uci set wireless.default_radio0.network='lan'
+	uci set wireless.default_radio0.mode='ap'
+	uci set wireless.default_radio0.ssid='ImmortalWrt'
+	uci set wireless.default_radio0.encryption='psk2'
+	uci set wireless.default_radio0.key='password'
+	uci set wireless.default_radio0.disabled='0'
+
+	uci set wireless.default_radio1=wifi-iface
+	uci set wireless.default_radio1.device='radio1'
+	uci set wireless.default_radio1.network='lan'
+	uci set wireless.default_radio1.mode='ap'
+	uci set wireless.default_radio1.ssid='ImmortalWrt'
+	uci set wireless.default_radio1.encryption='psk2'
+	uci set wireless.default_radio1.key='password'
+	uci set wireless.default_radio1.disabled='0'
+
+	uci set wireless.default_radio2=wifi-iface
+	uci set wireless.default_radio2.device='radio2'
+	uci set wireless.default_radio2.network='lan'
+	uci set wireless.default_radio2.mode='ap'
+	uci set wireless.default_radio2.ssid='ImmortalWrt'
+	uci set wireless.default_radio2.encryption='sae-mixed'
+	uci set wireless.default_radio2.key='password'
+	uci set wireless.default_radio2.disabled='0'
+
 	uci commit wireless
 	;;
 esac
