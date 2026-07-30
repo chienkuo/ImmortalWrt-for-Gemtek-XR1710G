@@ -44,7 +44,7 @@ jobs:
             echo "has_updates=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Merge upstream (strategy: theirs)
+      - name: "Merge upstream (strategy: theirs)"
         id: merge_theirs
         if: steps.check.outputs.has_updates == 'true'
         run: |
@@ -58,7 +58,7 @@ jobs:
             echo "merge_success=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Merge upstream (fallback: recursive)
+      - name: "Merge upstream (fallback: recursive)"
         id: merge_fallback
         if: steps.check.outputs.has_updates == 'true' && steps.merge_theirs.outputs.merge_success != 'true'
         run: |
