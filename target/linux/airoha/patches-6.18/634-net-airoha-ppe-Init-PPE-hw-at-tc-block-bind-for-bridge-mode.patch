@@ -16,15 +16,15 @@ is loaded by ~12s into boot; fw4 runs at ~25-40s, so the NPU is always ready.
 
 Signed-off-by: Gilly <gilly@example.com>
 ---
- drivers/net/ethernet/airoha/airoha_eth.c |  9 +++++++++
+ drivers/net/ethernet/airoha/airoha_eth.c | 13 ++++++++++++++++---
  drivers/net/ethernet/airoha/airoha_eth.h |  2 ++
- drivers/net/ethernet/airoha/airoha_ppe.c | 25 ++++++++++++++++++++++++-
- 3 files changed, 35 insertions(+), 1 deletion(-)
+ drivers/net/ethernet/airoha/airoha_ppe.c | 24 ++++++++++++++++++++++++---
+ 3 files changed, 39 insertions(+), 3 deletions(-)
 
 --- a/drivers/net/ethernet/airoha/airoha_eth.c
 +++ b/drivers/net/ethernet/airoha/airoha_eth.c
-@@ -3002,7 +3002,9 @@
- 			     struct flow_block_offload *f)
+@@ -3002,7 +3002,9 @@ static int airoha_dev_setup_tc_block(str
+ 				     struct flow_block_offload *f)
  {
  	flow_setup_cb_t *cb = airoha_dev_setup_tc_block_cb;
 +	struct airoha_gdm_dev *gdm_dev = netdev_priv(dev);
@@ -33,23 +33,23 @@ Signed-off-by: Gilly <gilly@example.com>
  	struct flow_block_cb *block_cb;
  
  	if (f->binder_type != FLOW_BLOCK_BINDER_TYPE_CLSACT_INGRESS)
-@@ -3023,6 +3025,13 @@
+@@ -3023,6 +3025,13 @@ static int airoha_dev_setup_tc_block(str
  		flow_block_cb_incref(block_cb);
  		flow_block_cb_add(block_cb, f);
  		list_add_tail(&block_cb->driver_list, &block_cb_list);
-+	/* Eagerly initialize PPE hardware for bridge/AP mode where
-+	 * the software bridge FDB is empty (hardware-offloaded to
-+	 * MT7530/switchdev) so nf_flow_table never issues TC_CLSFLOWER
-+	 * rules and the lazy PPE init in airoha_ppe_setup_tc_block_cb
-+	 * would never fire. */
-+	airoha_ppe_start_offload(eth);
++		/* Eagerly initialize PPE hardware for bridge/AP mode where
++		 * the software bridge FDB is empty (hardware-offloaded to
++		 * MT7530/switchdev) so nf_flow_table never issues TC_CLSFLOWER
++		 * rules and the lazy PPE init in airoha_ppe_setup_tc_block_cb
++		 * would never fire. */
++		airoha_ppe_start_offload(eth);
 +
  		return 0;
  	case FLOW_BLOCK_UNBIND:
  		block_cb = flow_block_cb_lookup(f->block, cb, dev);
 --- a/drivers/net/ethernet/airoha/airoha_eth.h
 +++ b/drivers/net/ethernet/airoha/airoha_eth.h
-@@ -685,6 +685,8 @@
+@@ -685,6 +685,8 @@ bool airoha_ppe_is_enabled(struct airoha
  void airoha_ppe_check_skb(struct airoha_ppe_dev *dev, struct sk_buff *skb,
  			  u16 hash, bool rx_wlan);
  int airoha_ppe_setup_tc_block_cb(struct airoha_ppe_dev *dev, void *type_data);
@@ -60,37 +60,10 @@ Signed-off-by: Gilly <gilly@example.com>
  void airoha_ppe_init_upd_mem(struct airoha_gdm_dev *dev, const u8 *addr);
 --- a/drivers/net/ethernet/airoha/airoha_ppe.c
 +++ b/drivers/net/ethernet/airoha/airoha_ppe.c
-@@ -1403,7 +1403,7 @@
- 	return err;
+@@ -97,6 +97,18 @@ void airoha_ppe_set_cpu_port(struct airo
+ 		      __field_prep(DFT_CPORT_MASK(fport), fe_cpu_port));
  }
  
--static int airoha_ppe_offload_setup(struct airoha_eth *eth)
-+int airoha_ppe_offload_setup(struct airoha_eth *eth)
- {
- 	struct airoha_npu *npu = airoha_ppe_npu_get(eth);
- 	struct airoha_ppe *ppe = eth->ppe;
-@@ -1442,6 +1442,7 @@
- 
- 	return err;
- }
-+EXPORT_SYMBOL_GPL(airoha_ppe_offload_setup);
- 
- int airoha_ppe_setup_tc_block_cb(struct airoha_ppe_dev *dev, void *type_data)
- {
-@@ -1562,6 +1563,28 @@
- }
- EXPORT_SYMBOL_GPL(airoha_ppe_put_dev);
- 
-+/**
-+ * airoha_ppe_start_offload - eagerly initialize PPE hardware offload
-+ * @eth: airoha ethernet device
-+ *
-+ * Called at TC block bind time (FLOW_BLOCK_BIND) so that PPE hardware is
-+ * initialized even in bridge/AP mode where the kernel's nf_flow_table bridge
-+ * traversal fails due to an empty software FDB (hardware-offloaded to
-+ * MT7530/switchdev), meaning TC_CLSFLOWER rules are never issued and the
-+ * lazy init path in airoha_ppe_setup_tc_block_cb never fires.
-+ */
 +void airoha_ppe_start_offload(struct airoha_eth *eth)
 +{
 +	if (!test_bit(DEV_STATE_REGISTERED, &eth->state))
@@ -103,6 +76,23 @@ Signed-off-by: Gilly <gilly@example.com>
 +}
 +EXPORT_SYMBOL_GPL(airoha_ppe_start_offload);
 +
- int airoha_ppe_init(struct airoha_eth *eth)
+ static void airoha_ppe_hw_init(struct airoha_ppe *ppe)
  {
- 	int foe_size, err, ppe_num_stats_entries;
+ 	u32 sram_ppe_num_data_entries = PPE_SRAM_NUM_ENTRIES, sram_num_entries;
+@@ -1403,7 +1415,7 @@ static int airoha_ppe_wait_for_npu_init(
+ 	return err;
+ }
+ 
+-static int airoha_ppe_offload_setup(struct airoha_eth *eth)
++int airoha_ppe_offload_setup(struct airoha_eth *eth)
+ {
+ 	struct airoha_npu *npu = airoha_ppe_npu_get(eth);
+ 	struct airoha_ppe *ppe = eth->ppe;
+@@ -1442,6 +1454,7 @@ error_npu_put:
+ 
+ 	return err;
+ }
++EXPORT_SYMBOL_GPL(airoha_ppe_offload_setup);
+ 
+ int airoha_ppe_setup_tc_block_cb(struct airoha_ppe_dev *dev, void *type_data)
+ {

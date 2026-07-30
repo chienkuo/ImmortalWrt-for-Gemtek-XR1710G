@@ -34,33 +34,122 @@ jobs:
       - name: Check for updates
         id: check
         run: |
-          LOCAL=$(git rev-parse HEAD)
-          REMOTE=$(git rev-parse upstream/master)
-          if [ "$LOCAL" = "$REMOTE" ]; then
-            echo "No updates available (local: ${LOCAL:0:7}, remote: ${REMOTE:0:7})"
+          # Use merge-base to find the point where local and upstream diverged
+          MERGE_BASE=$(git merge-base HEAD upstream/master)
+          UPSTREAM_HEAD=$(git rev-parse upstream/master)
+
+          if [ "$MERGE_BASE" = "$UPSTREAM_HEAD" ]; then
+            echo "No upstream updates available"
+            echo "merge_base=${MERGE_BASE:0:7}" >> "$GITHUB_OUTPUT"
+            echo "upstream_head=${UPSTREAM_HEAD:0:7}" >> "$GITHUB_OUTPUT"
             echo "has_updates=false" >> "$GITHUB_OUTPUT"
           else
-            echo "Updates available: ${LOCAL:0:7} -> ${REMOTE:0:7}"
+            NEW_COMMITS=$(git rev-list --count ${MERGE_BASE}..${UPSTREAM_HEAD})
+            echo "Updates available: ${NEW_COMMITS} new upstream commits"
+            echo "merge_base=${MERGE_BASE:0:7}" >> "$GITHUB_OUTPUT"
+            echo "upstream_head=${UPSTREAM_HEAD:0:7}" >> "$GITHUB_OUTPUT"
             echo "has_updates=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Merge upstream
+      - name: "Merge upstream"
+        id: merge
         if: steps.check.outputs.has_updates == 'true'
         run: |
-          git merge --no-edit upstream/master || {
-            echo "::error::Merge failed. Conflicts need manual resolution."
-            git diff --name-only --diff-filter=U
+          echo "Attempting merge with default strategy (preserve local changes on conflict)..."
+          if git merge --no-edit upstream/master; then
+            echo "Merge succeeded"
+            echo "merge_success=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Merge has conflicts! This is expected for custom patch repos."
+            echo ""
+            echo "Conflict files:"
+            git diff --name-only --diff-filter=U || true
+            echo ""
+            echo "Aborting merge. Manual resolution may be needed."
+            git merge --abort 2>/dev/null || true
+            echo "merge_success=false" >> "$GITHUB_OUTPUT"
             exit 1
-          }
+          fi
+
+      - name: Validate patch integrity
+        if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_success == 'true'
+        run: |
+          echo "=== Checking patch file integrity ==="
+          PATCH_DIR="target/linux/airoha/patches-6.18"
+          CUSTOM_PATCHES=$(ls -1 "$PATCH_DIR"/*airoha* 2>/dev/null || echo "")
+
+          if [ -z "$CUSTOM_PATCHES" ]; then
+            echo "::error::Custom patch files are missing! Merge may have corrupted them."
+            echo "Please check the merge result manually."
+            exit 1
+          fi
+
+          echo "Custom patches found:"
+          echo "$CUSTOM_PATCHES"
+          echo ""
+          echo "Checking patch file format..."
+          for patch in $CUSTOM_PATCHES; do
+            if head -1 "$patch" | grep -q "^From:"; then
+              echo "  ✓ $patch (valid header)"
+            else
+              echo "  ✗ $patch (missing 'From:' header)"
+            fi
+          done
+
+      - name: Restore local customizations
+        if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_success == 'true'
+        run: |
+          # Restore Airoha-specific kernel configs that may be lost during merge
+          CONFIG_FILE="target/linux/airoha/an7583/config-6.18"
+          if [ -f "$CONFIG_FILE" ]; then
+            # Add back critical Airoha configs if missing
+            if ! grep -q "CONFIG_AIROHA_CPU_PM_DOMAIN" "$CONFIG_FILE"; then
+              sed -i '1a CONFIG_AIROHA_CPU_PM_DOMAIN=y\n# CONFIG_MTK_SCPSYS is not set\n# CONFIG_MTK_SCPSYS_PM_DOMAINS is not set\nCONFIG_AIROHA_SCU_SSR=y' "$CONFIG_FILE"
+              echo "Restored Airoha CPU PM Domain config"
+            fi
+          fi
+
+      - name: Update README with upstream version
+        if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_success == 'true'
+        run: |
+          UPSTREAM_SHORT="${{ steps.check.outputs.upstream_head }}"
+          SYNC_DATE=$(date -u +"%Y-%m-%d %H:%M UTC")
+
+          echo "Updating README with upstream commit: $UPSTREAM_SHORT"
+          echo "Sync date: $SYNC_DATE"
+
+          README="README.md"
+
+          # Update upstream commit badge (immortalwrt%40xxxx -> immortalwrt%40<hash>)
+          sed -i "s|upstream-immortalwrt%40[a-zA-Z0-9_/-]*-blue|upstream-immortalwrt%40${UPSTREAM_SHORT}-blue|" "$README"
+
+          # Update sync date badge
+          DATE_ENCODED=$(echo "$SYNC_DATE" | sed 's/ /%20/g')
+          sed -i "s|synced-[a-zA-Z0-9%/._ -]*-brightgreen|synced-${DATE_ENCODED}-brightgreen|" "$README"
+
+          echo "README updated successfully"
 
       - name: Push to origin
-        if: steps.check.outputs.has_updates == 'true'
-        run: git push origin master
+        if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_success == 'true'
+        run: |
+          git add -A
+          git commit -m "Sync upstream ImmortalWrt (${{ steps.check.outputs.upstream_head }})" || echo "No changes to commit"
+          echo "Pushing to origin..."
+          git push origin master
 
       - name: Show result
         if: always()
         run: |
           echo "=== Sync Result ==="
+          if [ "${{ steps.check.outputs.has_updates }}" = "true" ]; then
+            echo "Updates were available from upstream"
+            echo "Merge status: ${{ steps.merge.outputs.merge_success }}"
+          else
+            echo "No updates from upstream"
+          fi
+          echo ""
+          echo "=== Recent Commits ==="
           git log --oneline -5 || true
+          echo ""
           echo "=== Remote Status ==="
           git remote -v || true
