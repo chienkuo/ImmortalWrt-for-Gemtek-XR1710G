@@ -34,68 +34,70 @@ jobs:
       - name: Check for updates
         id: check
         run: |
-          LOCAL=$(git rev-parse HEAD)
-          REMOTE=$(git rev-parse upstream/master)
-          if [ "$LOCAL" = "$REMOTE" ]; then
-            echo "No updates available (local: ${LOCAL:0:7}, remote: ${REMOTE:0:7})"
+          # Use merge-base to find the point where local and upstream diverged
+          MERGE_BASE=$(git merge-base HEAD upstream/master)
+          UPSTREAM_HEAD=$(git rev-parse upstream/master)
+
+          if [ "$MERGE_BASE" = "$UPSTREAM_HEAD" ]; then
+            echo "No upstream updates available"
+            echo "merge_base=${MERGE_BASE:0:7}" >> "$GITHUB_OUTPUT"
+            echo "upstream_head=${UPSTREAM_HEAD:0:7}" >> "$GITHUB_OUTPUT"
             echo "has_updates=false" >> "$GITHUB_OUTPUT"
           else
-            echo "Updates available: ${LOCAL:0:7} -> ${REMOTE:0:7}"
+            NEW_COMMITS=$(git rev-list --count ${MERGE_BASE}..${UPSTREAM_HEAD})
+            echo "Updates available: ${NEW_COMMITS} new upstream commits"
+            echo "merge_base=${MERGE_BASE:0:7}" >> "$GITHUB_OUTPUT"
+            echo "upstream_head=${UPSTREAM_HEAD:0:7}" >> "$GITHUB_OUTPUT"
             echo "has_updates=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: "Merge upstream (strategy: theirs)"
-        id: merge_theirs
+      - name: "Merge upstream"
+        id: merge
         if: steps.check.outputs.has_updates == 'true'
         run: |
-          echo "Attempting merge with -X theirs strategy..."
-          if git merge --no-edit upstream/master -X theirs; then
-            echo "Merge succeeded with -X theirs"
+          echo "Attempting merge with default strategy (preserve local changes on conflict)..."
+          if git merge --no-edit upstream/master; then
+            echo "Merge succeeded"
             echo "merge_success=true" >> "$GITHUB_OUTPUT"
           else
-            echo "Merge with -X theirs failed, aborting..."
+            echo "::error::Merge has conflicts! This is expected for custom patch repos."
+            echo ""
+            echo "Conflict files:"
+            git diff --name-only --diff-filter=U || true
+            echo ""
+            echo "Aborting merge. Manual resolution may be needed."
             git merge --abort 2>/dev/null || true
             echo "merge_success=false" >> "$GITHUB_OUTPUT"
+            exit 1
           fi
 
-      - name: "Merge upstream (fallback: recursive)"
-        id: merge_fallback
-        if: steps.check.outputs.has_updates == 'true' && steps.merge_theirs.outputs.merge_success != 'true'
+      - name: Validate patch integrity
+        if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_success == 'true'
         run: |
-          echo "Attempting merge with recursive strategy..."
-          if git merge --no-edit upstream/master -X recursive -X patience; then
-            echo "Merge succeeded with recursive strategy"
-            echo "merge_success=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Merge with recursive also failed, aborting..."
-            git merge --abort 2>/dev/null || true
-            echo "::error::All merge strategies failed."
-            echo "Conflicting files:"
-            git diff --name-only --diff-filter=U 2>/dev/null || echo "No conflict files found"
-            echo "merge_success=false" >> "$GITHUB_OUTPUT"
+          echo "=== Checking patch file integrity ==="
+          PATCH_DIR="target/linux/airoha/patches-6.18"
+          CUSTOM_PATCHES=$(ls -1 "$PATCH_DIR"/*airoha* 2>/dev/null || echo "")
+
+          if [ -z "$CUSTOM_PATCHES" ]; then
+            echo "::error::Custom patch files are missing! Merge may have corrupted them."
+            echo "Please check the merge result manually."
+            exit 1
           fi
 
-      - name: Check merge result
-        id: merge_check
-        if: steps.check.outputs.has_updates == 'true'
-        run: |
-          MERGE_SUCCESS="${{ steps.merge_theirs.outputs.merge_success }}"
-          if [ "$MERGE_SUCCESS" != "true" ]; then
-            MERGE_SUCCESS="${{ steps.merge_fallback.outputs.merge_success }}"
-          fi
-          if [ "$MERGE_SUCCESS" != "true" ]; then
-            echo "::error::Merge failed with all strategies."
-            echo "Attempting to rebase onto upstream instead..."
-            git rebase upstream/master || {
-              echo "::error::Rebase also failed."
-              git rebase --abort 2>/dev/null || true
-              exit 1
-            }
-            echo "Rebase succeeded!"
-          fi
+          echo "Custom patches found:"
+          echo "$CUSTOM_PATCHES"
+          echo ""
+          echo "Checking patch file format..."
+          for patch in $CUSTOM_PATCHES; do
+            if head -1 "$patch" | grep -q "^From:"; then
+              echo "  ✓ $patch (valid header)"
+            else
+              echo "  ✗ $patch (missing 'From:' header)"
+            fi
+          done
 
       - name: Restore local customizations
-        if: steps.check.outputs.has_updates == 'true'
+        if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_success == 'true'
         run: |
           # Restore Airoha-specific kernel configs that may be lost during merge
           CONFIG_FILE="target/linux/airoha/an7583/config-6.18"
@@ -108,26 +110,26 @@ jobs:
           fi
 
       - name: Push to origin
-        if: steps.check.outputs.has_updates == 'true'
+        if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_success == 'true'
         run: |
           git add -A
           git commit -m "Sync upstream ImmortalWrt" || echo "No changes to commit"
-          echo "Attempting to push..."
-          if git push origin master; then
-            echo "Push succeeded!"
-          else
-            echo "::error::Push failed. Attempting force push..."
-            git push origin master --force || {
-              echo "::error::Force push also failed. May be branch protected or permission issue."
-              echo "Please check branch protection rules or manually resolve conflicts."
-              exit 1
-            }
-          fi
+          echo "Pushing to origin..."
+          git push origin master
 
       - name: Show result
         if: always()
         run: |
           echo "=== Sync Result ==="
+          if [ "${{ steps.check.outputs.has_updates }}" = "true" ]; then
+            echo "Updates were available from upstream"
+            echo "Merge status: ${{ steps.merge.outputs.merge_success }}"
+          else
+            echo "No updates from upstream"
+          fi
+          echo ""
+          echo "=== Recent Commits ==="
           git log --oneline -5 || true
+          echo ""
           echo "=== Remote Status ==="
           git remote -v || true
