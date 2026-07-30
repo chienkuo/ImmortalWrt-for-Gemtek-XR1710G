@@ -109,11 +109,31 @@ jobs:
             fi
           fi
 
+      - name: Update README with upstream version
+        if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_success == 'true'
+        run: |
+          UPSTREAM_SHORT="${{ steps.check.outputs.upstream_head }}"
+          SYNC_DATE=$(date -u +"%Y-%m-%d %H:%M UTC")
+
+          echo "Updating README with upstream commit: $UPSTREAM_SHORT"
+          echo "Sync date: $SYNC_DATE"
+
+          README="README.md"
+
+          # Update upstream commit badge (immortalwrt%40xxxx -> immortalwrt%40<hash>)
+          sed -i "s|upstream-immortalwrt%40[a-zA-Z0-9_/-]*-blue|upstream-immortalwrt%40${UPSTREAM_SHORT}-blue|" "$README"
+
+          # Update sync date badge
+          DATE_ENCODED=$(echo "$SYNC_DATE" | sed 's/ /%20/g')
+          sed -i "s|synced-[a-zA-Z0-9%/._ -]*-brightgreen|synced-${DATE_ENCODED}-brightgreen|" "$README"
+
+          echo "README updated successfully"
+
       - name: Push to origin
         if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_success == 'true'
         run: |
           git add -A
-          git commit -m "Sync upstream ImmortalWrt" || echo "No changes to commit"
+          git commit -m "Sync upstream ImmortalWrt (${{ steps.check.outputs.upstream_head }})" || echo "No changes to commit"
           echo "Pushing to origin..."
           git push origin master
 
