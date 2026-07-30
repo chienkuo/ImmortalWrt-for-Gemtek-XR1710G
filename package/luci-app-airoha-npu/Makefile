@@ -16,6 +16,10 @@ LUCI_DEPENDS:=+luci-base @TARGET_airoha
 
 include $(TOPDIR)/feeds/luci/luci.mk
 
+define Package/$(PKG_NAME)/conffiles
+/etc/config/airoha_npu
+endef
+
 define Package/$(PKG_NAME)/install
 	# Install LuCI frontend views
 	$(INSTALL_DIR) $(1)/www/luci-static/resources/view/airoha_npu
@@ -24,6 +28,12 @@ define Package/$(PKG_NAME)/install
 	# Install RPC backend script (executable)
 	$(INSTALL_DIR) $(1)/usr/libexec/rpcd
 	$(INSTALL_BIN) ./root/usr/libexec/rpcd/luci.airoha_npu $(1)/usr/libexec/rpcd/
+
+	# Install UCI config and init script
+	$(INSTALL_DIR) $(1)/etc/config
+	$(INSTALL_CONF) ./root/etc/config/airoha_npu $(1)/etc/config/
+	$(INSTALL_DIR) $(1)/etc/init.d
+	$(INSTALL_BIN) ./root/etc/init.d/airoha_npu $(1)/etc/init.d/
 
 	# Install LuCI menu configuration
 	$(INSTALL_DIR) $(1)/usr/share/luci/menu.d
@@ -37,6 +47,9 @@ endef
 define Package/$(PKG_NAME)/postinst
 #!/bin/sh
 [ -n "$${IPKG_INSTROOT}" ] && exit 0
+
+# Enable the airoha_npu init script
+/etc/init.d/airoha_npu enable 2>/dev/null
 
 # Reload rpcd to register the new luci.airoha_npu backend
 /etc/init.d/rpcd reload 2>/dev/null

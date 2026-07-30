@@ -18,6 +18,15 @@ board=$(board_name)
 case "$board" in
 gemtek,xr1710g-ubi|\
 gemtek,w1700k-ubi)
+	# Skip auto-configuration if a WiFi interface is already configured
+	# (e.g. a preseeded /etc/config/wireless shipped via files/ or restored
+	# from a backup). In that case keep the existing SSIDs untouched.
+	if uci -q get wireless.default_radio0 >/dev/null 2>&1 || \
+	   uci -q get wireless.default_radio1 >/dev/null 2>&1 || \
+	   uci -q get wireless.default_radio2 >/dev/null 2>&1; then
+		exit 0
+	fi
+
 	# Country code
 	uci set wireless.radio0.country='US'
 	uci set wireless.radio1.country='US'

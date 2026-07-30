@@ -1,0 +1,25 @@
+#!/bin/sh /etc/rc.common
+#
+# Apply airoha_npu UCI settings after network is up.
+# Bridge sysctls (net.bridge.*) only exist once the bridge module is loaded,
+# which happens when netifd creates br-lan (network START=20).
+#
+
+START=21
+
+apply_offload() {
+	local vlan pppoe
+
+	[ -d /proc/sys/net/bridge ] || return 0
+
+	config_get vlan offload vlan 0
+	config_get pppoe offload pppoe 0
+
+	echo "$vlan" > /proc/sys/net/bridge/bridge-nf-filter-vlan-tagged 2>/dev/null
+	echo "$pppoe" > /proc/sys/net/bridge/bridge-nf-filter-pppoe-tagged 2>/dev/null
+}
+
+start() {
+	config_load airoha_npu
+	apply_offload
+}

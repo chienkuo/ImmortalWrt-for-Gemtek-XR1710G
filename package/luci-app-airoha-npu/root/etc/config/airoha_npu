@@ -1,0 +1,3 @@
+config offload
+	option vlan '0'
+	option pppoe '0'

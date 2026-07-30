@@ -473,7 +473,7 @@ get_frame_engine() {
 
 get_vlan_offload() {
 	local val
-	val=$(cat /proc/sys/net/bridge/bridge-nf-filter-vlan-tagged 2>/dev/null)
+	val=$(uci -q get airoha_npu.offload.vlan)
 	printf '{"enabled":%d}' "${val:-0}"
 }
 
@@ -485,18 +485,16 @@ set_vlan_offload() {
 		echo '{"error":"enabled must be 0 or 1"}'
 		return
 	fi
-	if ! echo "$enabled" > /proc/sys/net/bridge/bridge-nf-filter-vlan-tagged 2>/dev/null; then
-		echo '{"error":"failed - bridge module may not be loaded"}'
-		return
-	fi
-	echo "net.bridge.bridge-nf-filter-vlan-tagged=$enabled" > /etc/sysctl.d/14-vlan-offload.conf
+	uci -q set airoha_npu.offload.vlan="$enabled"
+	uci -q commit airoha_npu
+	# Apply immediately if bridge is available
+	echo "$enabled" > /proc/sys/net/bridge/bridge-nf-filter-vlan-tagged 2>/dev/null
 	printf '{"result":"ok","enabled":%d}' "$enabled"
 }
 
 get_pppoe_offload() {
 	local val
-	# Use bridge-nf-filter-pppoe-tagged sysctl (consistent with flowsense)
-	val=$(cat /proc/sys/net/bridge/bridge-nf-filter-pppoe-tagged 2>/dev/null)
+	val=$(uci -q get airoha_npu.offload.pppoe)
 	printf '{"enabled":%d}' "${val:-0}"
 }
 
@@ -508,15 +506,13 @@ set_pppoe_offload() {
 		echo '{"error":"enabled must be 0 or 1"}'
 		return
 	fi
-	# Load bridge module if needed and set sysctl (consistent with flowsense)
+	uci -q set airoha_npu.offload.pppoe="$enabled"
+	uci -q commit airoha_npu
+	# Load bridge module if needed and apply immediately
 	if [ "$enabled" = "1" ]; then
 		modprobe bridge 2>/dev/null
 	fi
-	if ! echo "$enabled" > /proc/sys/net/bridge/bridge-nf-filter-pppoe-tagged 2>/dev/null; then
-		echo '{"error":"failed - bridge module may not be loaded"}'
-		return
-	fi
-	echo "net.bridge.bridge-nf-filter-pppoe-tagged=$enabled" > /etc/sysctl.d/13-pppoe-offload.conf
+	echo "$enabled" > /proc/sys/net/bridge/bridge-nf-filter-pppoe-tagged 2>/dev/null
 	# Also load PPTP conntrack helper for PPPoE offload support
 	if [ "$enabled" = "1" ]; then
 		modprobe nf_conntrack_pptp 2>/dev/null
