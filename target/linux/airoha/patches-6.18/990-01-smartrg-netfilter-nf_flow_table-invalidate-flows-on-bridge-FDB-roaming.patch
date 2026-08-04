@@ -14,6 +14,9 @@ Optimizations to reduce CPU overhead under FDB churn:
 - Track per-flowtable direct-xmit flow count; skip flowtables with none
 - Skip multicast/broadcast FDB entries
 
+Rebased for kernel 6.18.40 (nf_flow_table_cleanup now iterates
+flowtables directly).
+
 Signed-off-by: Chad Monroe <chad@monroe.io>
 ---
  include/net/netfilter/nf_flow_table.h |   12 ++
@@ -29,8 +32,8 @@ Signed-off-by: Chad Monroe <chad@monroe.io>
 +#include <linux/etherdevice.h>
  #include <net/ip.h>
  #include <net/ip6_route.h>
- #include <net/netfilter/nf_flow_table.h>
-@@ -12,10 +13,23 @@
+ #include <net/netfilter/nf_tables.h>
+@@ -13,9 +14,22 @@
  #include <net/netfilter/nf_conntrack_core.h>
  #include <net/netfilter/nf_conntrack_l4proto.h>
  #include <net/netfilter/nf_conntrack_tuple.h>
@@ -40,7 +43,7 @@ Signed-off-by: Chad Monroe <chad@monroe.io>
  
  static DEFINE_MUTEX(flowtable_lock);
  static LIST_HEAD(flowtables);
- 
++
 +#if IS_ENABLED(CONFIG_NET_SWITCHDEV)
 +static struct workqueue_struct *flow_mac_cleanup_wq;
 +
@@ -50,24 +53,23 @@ Signed-off-by: Chad Monroe <chad@monroe.io>
 +	unsigned char mac[ETH_ALEN];
 +};
 +#endif
-+
+ 
  static void
  flow_offload_fill_dir(struct flow_offload *flow,
- 		      enum flow_offload_tuple_dir dir)
-@@ -295,6 +309,12 @@ int flow_offload_add(struct nf_flowtable
+@@ -339,6 +353,12 @@
+ 	}
  
- 	nf_ct_offload_timeout(flow->ct);
- 
+ 	nf_ct_refresh(flow->ct, NF_CT_DAY);
++
 +#if IS_ENABLED(CONFIG_NET_SWITCHDEV)
 +	if (flow->tuplehash[0].tuple.xmit_type == FLOW_OFFLOAD_XMIT_DIRECT ||
 +	    flow->tuplehash[1].tuple.xmit_type == FLOW_OFFLOAD_XMIT_DIRECT)
 +		atomic_inc(&flow_table->direct_xmit_count);
 +#endif
-+
+ 
  	if (nf_flowtable_hw_offload(flow_table)) {
  		__set_bit(NF_FLOW_HW, &flow->flags);
- 		nf_flow_offload_add(flow_table, flow);
-@@ -330,6 +350,11 @@ static inline bool nf_flow_has_expired(c
+@@ -371,6 +391,11 @@
  static void flow_offload_del(struct nf_flowtable *flow_table,
  			     struct flow_offload *flow)
  {
@@ -79,7 +81,7 @@ Signed-off-by: Chad Monroe <chad@monroe.io>
  	rhashtable_remove_fast(&flow_table->rhashtable,
  			       &flow->tuplehash[FLOW_OFFLOAD_DIR_ORIGINAL].node,
  			       nf_flow_offload_rhash_params);
-@@ -544,6 +569,9 @@ int nf_flow_table_init(struct nf_flowtab
+@@ -697,6 +722,9 @@
  	INIT_DELAYED_WORK(&flowtable->gc_work, nf_flow_offload_work_gc);
  	flow_block_init(&flowtable->flow_block);
  	init_rwsem(&flowtable->flow_block_lock);
@@ -89,10 +91,11 @@ Signed-off-by: Chad Monroe <chad@monroe.io>
  
  	err = rhashtable_init(&flowtable->rhashtable,
  			      &nf_flow_offload_rhash_params);
-@@ -596,6 +624,115 @@ void nf_flow_table_cleanup(struct net_de
+@@ -748,7 +776,116 @@
+ 	mutex_unlock(&flowtable_lock);
  }
  EXPORT_SYMBOL_GPL(nf_flow_table_cleanup);
- 
++
 +#if IS_ENABLED(CONFIG_NET_SWITCHDEV)
 +static void nf_flow_table_do_cleanup_mac(struct nf_flowtable *flowtable,
 +					 struct flow_offload *flow, void *data)
@@ -120,7 +123,7 @@ Signed-off-by: Chad Monroe <chad@monroe.io>
 +		flow_offload_teardown(flow);
 +	}
 +}
-+
+ 
 +static void nf_flow_table_mac_cleanup_work(struct work_struct *work)
 +{
 +	struct flow_mac_cleanup *cleanup =
@@ -205,7 +208,7 @@ Signed-off-by: Chad Monroe <chad@monroe.io>
  void nf_flow_table_free(struct nf_flowtable *flow_table)
  {
  	mutex_lock(&flowtable_lock);
-@@ -694,8 +831,27 @@ static int __init nf_flow_table_module_i
+@@ -826,8 +963,27 @@
  	if (ret)
  		goto out_bpf;
  
@@ -233,7 +236,7 @@ Signed-off-by: Chad Monroe <chad@monroe.io>
  out_bpf:
  	nf_flow_table_offload_exit();
  out_offload:
-@@ -705,6 +861,11 @@ out_offload:
+@@ -837,6 +993,11 @@
  
  static void __exit nf_flow_table_module_exit(void)
  {
@@ -242,12 +245,12 @@ Signed-off-by: Chad Monroe <chad@monroe.io>
 +	flush_workqueue(flow_mac_cleanup_wq);
 +	destroy_workqueue(flow_mac_cleanup_wq);
 +#endif
- 	unregister_netdevice_notifier(&flow_offload_netdev_notifier);
  	nf_flow_table_offload_exit();
  	unregister_pernet_subsys(&nf_flow_table_net_ops);
+ }
 --- a/include/net/netfilter/nf_flow_table.h
 +++ b/include/net/netfilter/nf_flow_table.h
-@@ -84,6 +84,9 @@ struct nf_flowtable {
+@@ -84,12 +84,22 @@
  	struct flow_block		flow_block;
  	struct rw_semaphore		flow_block_lock; /* Guards flow_block */
  	possible_net_t			net;
@@ -257,17 +260,16 @@ Signed-off-by: Chad Monroe <chad@monroe.io>
  };
  
  static inline bool nf_flowtable_hw_offload(struct nf_flowtable *flowtable)
-@@ -91,6 +94,13 @@ static inline bool nf_flowtable_hw_offlo
+ {
  	return flowtable->flags & NF_FLOWTABLE_HW_OFFLOAD;
- }
- 
++}
++
 +#if IS_ENABLED(CONFIG_NET_SWITCHDEV)
 +static inline bool nf_flowtable_has_direct_xmit(struct nf_flowtable *flowtable)
 +{
 +	return atomic_read(&flowtable->direct_xmit_count) > 0;
-+}
+ }
 +#endif
-+
+ 
  enum flow_offload_tuple_dir {
  	FLOW_OFFLOAD_DIR_ORIGINAL = IP_CT_DIR_ORIGINAL,
- 	FLOW_OFFLOAD_DIR_REPLY = IP_CT_DIR_REPLY,
