@@ -14,8 +14,8 @@ Optimizations to reduce CPU overhead under FDB churn:
 - Track per-flowtable direct-xmit flow count; skip flowtables with none
 - Skip multicast/broadcast FDB entries
 
-Rebased for kernel 6.18.40 (nf_flow_table_cleanup now iterates
-flowtables directly).
+Rebased for kernel 6.18.41 + generic netfilter patches (netdev
+notifier moved from nft_flow_offload.c to nf_flow_table_core.c).
 
 Signed-off-by: Chad Monroe <chad@monroe.io>
 ---
@@ -32,8 +32,8 @@ Signed-off-by: Chad Monroe <chad@monroe.io>
 +#include <linux/etherdevice.h>
  #include <net/ip.h>
  #include <net/ip6_route.h>
- #include <net/netfilter/nf_tables.h>
-@@ -13,9 +14,22 @@
+ #include <net/netfilter/nf_flow_table.h>
+@@ -12,9 +13,22 @@
  #include <net/netfilter/nf_conntrack_core.h>
  #include <net/netfilter/nf_conntrack_l4proto.h>
  #include <net/netfilter/nf_conntrack_tuple.h>
@@ -56,7 +56,7 @@ Signed-off-by: Chad Monroe <chad@monroe.io>
  
  static void
  flow_offload_fill_dir(struct flow_offload *flow,
-@@ -339,6 +353,12 @@
+@@ -338,6 +352,12 @@
  	}
  
  	nf_ct_refresh(flow->ct, NF_CT_DAY);
@@ -69,7 +69,7 @@ Signed-off-by: Chad Monroe <chad@monroe.io>
  
  	if (nf_flowtable_hw_offload(flow_table)) {
  		__set_bit(NF_FLOW_HW, &flow->flags);
-@@ -371,6 +391,11 @@
+@@ -370,6 +390,11 @@
  static void flow_offload_del(struct nf_flowtable *flow_table,
  			     struct flow_offload *flow)
  {
@@ -81,7 +81,7 @@ Signed-off-by: Chad Monroe <chad@monroe.io>
  	rhashtable_remove_fast(&flow_table->rhashtable,
  			       &flow->tuplehash[FLOW_OFFLOAD_DIR_ORIGINAL].node,
  			       nf_flow_offload_rhash_params);
-@@ -697,6 +722,9 @@
+@@ -696,6 +721,9 @@
  	INIT_DELAYED_WORK(&flowtable->gc_work, nf_flow_offload_work_gc);
  	flow_block_init(&flowtable->flow_block);
  	init_rwsem(&flowtable->flow_block_lock);
@@ -91,7 +91,7 @@ Signed-off-by: Chad Monroe <chad@monroe.io>
  
  	err = rhashtable_init(&flowtable->rhashtable,
  			      &nf_flow_offload_rhash_params);
-@@ -748,7 +776,116 @@
+@@ -747,7 +775,116 @@
  	mutex_unlock(&flowtable_lock);
  }
  EXPORT_SYMBOL_GPL(nf_flow_table_cleanup);
@@ -208,7 +208,7 @@ Signed-off-by: Chad Monroe <chad@monroe.io>
  void nf_flow_table_free(struct nf_flowtable *flow_table)
  {
  	mutex_lock(&flowtable_lock);
-@@ -826,8 +963,27 @@
+@@ -846,8 +983,27 @@
  	if (ret)
  		goto out_bpf;
  
@@ -236,7 +236,7 @@ Signed-off-by: Chad Monroe <chad@monroe.io>
  out_bpf:
  	nf_flow_table_offload_exit();
  out_offload:
-@@ -837,6 +993,11 @@
+@@ -857,6 +1013,11 @@
  
  static void __exit nf_flow_table_module_exit(void)
  {
@@ -245,9 +245,9 @@ Signed-off-by: Chad Monroe <chad@monroe.io>
 +	flush_workqueue(flow_mac_cleanup_wq);
 +	destroy_workqueue(flow_mac_cleanup_wq);
 +#endif
+ 	unregister_netdevice_notifier(&flow_offload_netdev_notifier);
  	nf_flow_table_offload_exit();
  	unregister_pernet_subsys(&nf_flow_table_net_ops);
- }
 --- a/include/net/netfilter/nf_flow_table.h
 +++ b/include/net/netfilter/nf_flow_table.h
 @@ -84,12 +84,22 @@
