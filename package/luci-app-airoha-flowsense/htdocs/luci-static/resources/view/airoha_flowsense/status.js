@@ -1400,27 +1400,16 @@ function updateCompassCards(cs, bypass, jitter, wan, wifi, bridge, mode) {
 /* ── Main View ── */
 return view.extend({
 	load: function() {
+		// Progressive rendering: fetch device mode early for initial banner
 		return Promise.all([
-			callNpuStatus(),        // d[0]
-			callPpeEntries(),       // d[1]
-			callTokenInfo(),        // d[2]
-			callFrameEngine(),      // d[3]
-			callGetVlanOffload(),   // d[4]
-			callTxStats(),          // d[5]
-			callGetDeviceMode(),    // d[6]
-			callGetNpuBypass(),     // d[7]
-			callGetWanHealth(),     // d[8]
-			callGetJitterResult(),  // d[9]
-			callGetConflictAlerts(),// d[10]
-			callGetWifiStats(),     // d[11]
-			callGetBridgeStats(),   // d[12]
-			callGetFlowOffload(),   // d[13]
-			callGetPppoeOffload(),  // d[14]
-			callGetEthStats()       // d[15]
-		]);
+			callGetDeviceMode()
+		]).then(function(dmResult) {
+			return [dmResult[0]];
+		});
 	},
 
 	render: function(data) {
+		data = data || [];
 		injectCSS();
 		var st=data[0]||{}, ppe=data[1]||{}, ti=data[2]||{}, fe=data[3]||{};
 		var vo=data[4]||{}, txs=data[5]||{}, dm=data[6]||{};
@@ -1477,7 +1466,8 @@ return view.extend({
 			]),
 		]);
 
-		poll.add(L.bind(function() {
+		// Data fetch + DOM update function — called immediately and via poll
+		var fetchData = L.bind(function() {
 			return Promise.all([
 				callNpuStatus(), callPpeEntries(), callTokenInfo(), callFrameEngine(),
 				callGetVlanOffload(), callTxStats(),
@@ -1489,7 +1479,7 @@ return view.extend({
 			]).then(L.bind(function(d) {
 				injectCSS();
 				var st=d[0]||{}, ppe=d[1]||{}, ti=d[2]||{}, fe=d[3]||{};
-				var vo=d[4]||{}, txs=d[5]||{}, dm=d[6]||{};
+				var vo=d[4]||{}, txs=d[5]||{}, dm=d[0]||{};
 				var bypass=d[7]||{}, wan=d[8]||{};
 				var jitter=d[9]||{}, alertData=d[10]||{};
 				var wifi=d[11]||{}, bridge=d[12]||{};
@@ -1551,7 +1541,12 @@ return view.extend({
 				var tb = document.getElementById('ppe-terminal-body');
 				if (tb) tb.innerHTML = buildPpeTerminalBody(ppe);
 			},this));
-		},this), 5);
+		}, this);
+
+		// Fetch data immediately (page shows with defaults, then updates)
+		fetchData();
+		// Poll for periodic updates
+		poll.add(fetchData, 5);
 
 		return view;
 	},
