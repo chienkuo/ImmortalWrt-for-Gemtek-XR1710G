@@ -12,19 +12,16 @@ because the VLAN encap information is missing from the flow entry.
 
 Enable with: echo 1 > /proc/sys/net/bridge/bridge-nf-filter-vlan-tagged
 
-Rebased for kernel 6.18.40 (nft_dev_forward_path moved to
-nf_flow_table_path.c).
-
 Based on MediaTek SDK patch by chak-kei.lam <chak-kei.lam@mediatek.com>.
 
 Signed-off-by: Ryan Chen <rchen14b@gmail.com>
 ---
- net/netfilter/nf_flow_table_path.c | 32 ++++++++++++++++++++++++++++++++
- 1 file changed, 32 insertions(+)
+ net/netfilter/nf_flow_table_path.c | 31 +++++++++++++++++++++++++++++--
+ 1 file changed, 29 insertions(+), 2 deletions(-)
 
 --- a/net/netfilter/nf_flow_table_path.c
 +++ b/net/netfilter/nf_flow_table_path.c
-@@ -179,6 +179,30 @@ struct nft_forward_info {
+@@ -153,6 +153,30 @@
  	enum flow_offload_xmit_type xmit_type;
  };
  
@@ -55,7 +52,7 @@ Signed-off-by: Ryan Chen <rchen14b@gmail.com>
  static void nft_dev_path_info(const struct net_device_path_stack *stack,
  			      struct nft_forward_info *info,
  			      unsigned char *ha, struct nf_flowtable *flowtable)
-@@ -313,8 +337,12 @@ static int nft_dev_forward_path(const struct nft_pktinfo *pkt,
+@@ -286,8 +310,12 @@
  		nft_br_vlan_dev_fill_forward_path(pkt, &ctx);
  	}
  

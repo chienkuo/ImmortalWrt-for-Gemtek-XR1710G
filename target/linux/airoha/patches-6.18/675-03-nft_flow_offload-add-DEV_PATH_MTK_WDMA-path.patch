@@ -8,9 +8,6 @@ through the MT7996 WiFi device, the DEV_PATH_MTK_WDMA step in the
 device path doesn't set h_source, causing the PPE entry to get a zero
 source MAC and packets stall in both software fastpath and hardware path.
 
-Rebased for kernel 6.18.40 (nft_dev_path_info moved to
-nf_flow_table_path.c).
-
 Based on MediaTek SDK patch by Bo-Cun Chen <bc-bocun.chen@mediatek.com>.
 
 Signed-off-by: Ryan Chen <rchen14b@gmail.com>
@@ -18,10 +15,10 @@ Signed-off-by: Ryan Chen <rchen14b@gmail.com>
  net/netfilter/nf_flow_table_path.c | 4 ++++
  1 file changed, 4 insertions(+)
 
+diff --git a/net/netfilter/nf_flow_table_path.c b/net/netfilter/nf_flow_table_path.c
 --- a/net/netfilter/nf_flow_table_path.c
 +++ b/net/netfilter/nf_flow_table_path.c
-@@ -245,6 +245,10 @@ static void nft_dev_path_info(const struct net_device_path_stack *stack,
- 			}
+@@ -229,6 +229,10 @@
  			info->xmit_type = FLOW_OFFLOAD_XMIT_DIRECT;
  			break;
 +		case DEV_PATH_MTK_WDMA:

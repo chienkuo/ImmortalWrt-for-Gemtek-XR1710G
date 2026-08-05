@@ -9,13 +9,13 @@ index 72f7900..ab60b60 100644
 -	(5150 - 5250 @ 80), (23), AUTO-BW
 -	(5250 - 5350 @ 80), (24), DFS, AUTO-BW
 +	(5150 - 5250 @ 80), (30), AUTO-BW
-+	(5250 - 5350 @ 80), (30), DFS, AUTO-BW
++	(5250 - 5350 @ 80), (30), AUTO-BW
  	# This range ends at 5725 MHz, but channel 144 extends to 5730 MHz.
  	# Since 5725 ~ 5730 MHz belongs to the next range which has looser
  	# requirements, we can extend the range by 5 MHz to make the kernel
  	# happy and be able to use channel 144.
 -	(5470 - 5730 @ 160), (24), DFS
-+	(5470 - 5730 @ 160), (30), DFS
++	(5470 - 5730 @ 160), (30), AUTO-BW
  	(5730 - 5850 @ 80), (30), AUTO-BW
  	# https://www.federalregister.gov/documents/2021/05/03/2021-08802/use-of-the-5850-5925-ghz-band
  	# max. 33 dBm AP @ 20MHz, 36 dBm AP @ 40Mhz+, 6 dB less for clients
