@@ -4,8 +4,8 @@
 
 [![Build Status](https://img.shields.io/github/actions/workflow/status/naoki66/ImmortalWrt-for-Gemtek-XR1710G/build-firmware.yml?branch=master&label=Build)](https://github.com/naoki66/ImmortalWrt-for-Gemtek-XR1710G/actions/workflows/build-firmware.yml)
 [![Sync Status](https://img.shields.io/github/actions/workflow/status/naoki66/ImmortalWrt-for-Gemtek-XR1710G/sync-upstream.yml?branch=master&label=Sync)](https://github.com/naoki66/ImmortalWrt-for-Gemtek-XR1710G/actions/workflows/sync-upstream.yml)
-[![Upstream](https://img.shields.io/badge/upstream-immortalwrt%40e5ca16047f-blue)](https://github.com/immortalwrt/immortalwrt)
-[![Synced](https://img.shields.io/badge/synced-2026--08--03%20merged-brightgreen)](#)
+[![Upstream](https://img.shields.io/badge/upstream-immortalwrt%409507037-blue)](https://github.com/immortalwrt/immortalwrt)
+[![Synced](https://img.shields.io/badge/synced-2026-08-07%2019:53%20UTC-brightgreen)](#)
 [![Kernel](https://img.shields.io/badge/kernel-6.18.41-red)](https://www.kernel.org/)
 [![SoC](https://img.shields.io/badge/SoC-Airoha%20AN7581GT-orange)]()
 [![License](https://img.shields.io/badge/license-GPL--2.0-green)](https://spdx.org/licenses/GPL-2.0-only.html)
