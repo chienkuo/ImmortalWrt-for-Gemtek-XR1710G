@@ -116,9 +116,15 @@ jobs:
             echo ""
             echo "---"
             echo ""
-            echo "如果您觉得对您有帮助，请我喝杯咖啡吧，让我更有动力持续更新。"
+            echo "## 提交内容"
             echo ""
-            echo '<img width="400" height="400" alt="c6ea388c976395326514814f80d512d5" src="https://github.com/user-attachments/assets/0ac90d58-ac73-4dc1-b926-276e539e5d0f" />'
+            LAST_TAG=$(git tag --sort=-creatordate 2>/dev/null | head -1 || true)
+            if [ -n "$LAST_TAG" ] && git merge-base --is-ancestor "$LAST_TAG" HEAD 2>/dev/null; then
+              git log "${LAST_TAG}..HEAD" --no-merges --pretty=format:'- %h %s'
+            else
+              git log -n 10 --no-merges --pretty=format:'- %h %s'
+            fi
+            echo ""
           } > /tmp/release_body.md
           {
             echo "body<<EOF"
