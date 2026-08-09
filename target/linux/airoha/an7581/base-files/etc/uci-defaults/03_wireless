@@ -2,14 +2,12 @@
 #
 # Copyright (C) 2026 ImmortalWrt
 #
-# MT7996 tri-band WiFi 7 defaults for Gemtek XR1710G / W1700K
-#   radio0: 2.4 GHz 2x2
-#   radio1: 5 GHz 4x4
-#   radio2: 6 GHz 4x4
-# US country code on all radios
+# MT7996 tri-band WiFi 7 radio-level defaults for Gemtek XR1710G / W1700K.
+# SSID / encryption / country are handled by board.d/03_wifi_defaults via
+# board.json (consumed by mac80211.uc).  This script only sets radio hardware
+# parameters (channel, htmode, txpower, beamformer) that have no board.json API.
 #
-
-[ ! -e /etc/config/wireless ] && exit 0
+# Runs once on first boot (uci-defaults, self-deleting after execution).
 
 . /lib/functions.sh
 
@@ -18,65 +16,49 @@ board=$(board_name)
 case "$board" in
 gemtek,xr1710g-ubi|\
 gemtek,w1700k-ubi)
-	# Skip auto-configuration if a WiFi interface is already configured
-	# (e.g. a preseeded /etc/config/wireless shipped via files/ or restored
-	# from a backup). In that case keep the existing SSIDs untouched.
-	if uci -q get wireless.default_radio0 >/dev/null 2>&1 || \
-	   uci -q get wireless.default_radio1 >/dev/null 2>&1 || \
-	   uci -q get wireless.default_radio2 >/dev/null 2>&1; then
-		exit 0
+	# Wait for wifi hardware (MT7996 PCIe init may lag behind kmodloader)
+	for i in $(seq 1 20); do
+		[ -d /sys/class/ieee80211/phy0 ] && break
+		sleep 1
+	done
+
+	# Create wireless config sections via wifi hardware detection
+	if ! uci -q get wireless.radio0 >/dev/null 2>&1; then
+		/sbin/wifi config 2>/dev/null
 	fi
+	uci -q get wireless.radio0 >/dev/null 2>&1 || exit 0
 
-	# Country code
-	uci set wireless.radio0.country='US'
-	uci set wireless.radio1.country='US'
-	uci set wireless.radio2.country='US'
-
-	# --- radio0: 2.4 GHz  EHT40, auto channel, txpower 30 dBm ---
+	# --- radio0: 2.4 GHz  HE20, auto channel, txpower 28 dBm ---
 	uci set wireless.radio0.channel='auto'
-	uci set wireless.radio0.htmode='EHT40'
-	uci set wireless.radio0.txpower='30'
+	uci set wireless.radio0.htmode='HE20'
+	uci set wireless.radio0.txpower='28'
 	uci set wireless.radio0.disabled='0'
+	uci set wireless.radio0.he_mu_beamformer='0'
+	uci set wireless.radio0.he_su_beamformer='1'
 
 	# --- radio1: 5 GHz  EHT160, ch 36, txpower 30 dBm ---
 	uci set wireless.radio1.channel='36'
 	uci set wireless.radio1.htmode='EHT160'
 	uci set wireless.radio1.txpower='30'
 	uci set wireless.radio1.disabled='0'
+	uci set wireless.radio1.he_su_beamformer='1'
+	uci set wireless.radio1.he_mu_beamformer='1'
+	uci set wireless.radio1.eht_su_beamformer='1'
+	uci set wireless.radio1.eht_mu_beamformer='1'
+	uci set wireless.radio1.he_bss_color='2'
+	uci set wireless.radio1.radar_background='1'
 
-	# --- radio2: 6 GHz  EHT320, ch 37, txpower 30 dBm ---
-	uci set wireless.radio2.channel='37'
+	# --- radio2: 6 GHz  EHT320, auto channel, txpower 30 dBm ---
+	uci set wireless.radio2.channel='auto'
 	uci set wireless.radio2.htmode='EHT320'
 	uci set wireless.radio2.txpower='30'
 	uci set wireless.radio2.disabled='0'
-
-	# --- WiFi interfaces: bridge all radios to LAN ---
-	uci set wireless.default_radio0=wifi-iface
-	uci set wireless.default_radio0.device='radio0'
-	uci set wireless.default_radio0.network='lan'
-	uci set wireless.default_radio0.mode='ap'
-	uci set wireless.default_radio0.ssid='ImmortalWrt-2G'
-	uci set wireless.default_radio0.encryption='psk2'
-	uci set wireless.default_radio0.key='password'
-	uci set wireless.default_radio0.disabled='0'
-
-	uci set wireless.default_radio1=wifi-iface
-	uci set wireless.default_radio1.device='radio1'
-	uci set wireless.default_radio1.network='lan'
-	uci set wireless.default_radio1.mode='ap'
-	uci set wireless.default_radio1.ssid='ImmortalWrt-5G'
-	uci set wireless.default_radio1.encryption='psk2'
-	uci set wireless.default_radio1.key='password'
-	uci set wireless.default_radio1.disabled='0'
-
-	uci set wireless.default_radio2=wifi-iface
-	uci set wireless.default_radio2.device='radio2'
-	uci set wireless.default_radio2.network='lan'
-	uci set wireless.default_radio2.mode='ap'
-	uci set wireless.default_radio2.ssid='ImmortalWrt-6G'
-	uci set wireless.default_radio2.encryption='sae-mixed'
-	uci set wireless.default_radio2.key='password'
-	uci set wireless.default_radio2.disabled='0'
+	uci set wireless.radio2.eht_su_beamformer='1'
+	uci set wireless.radio2.eht_mu_beamformer='1'
+	uci set wireless.radio2.he_su_beamformer='1'
+	uci set wireless.radio2.he_mu_beamformer='1'
+	uci set wireless.radio2.he_bss_color='1'
+	uci set wireless.radio2.he_twt_responder='1'
 
 	uci commit wireless
 	;;

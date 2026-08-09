@@ -15,13 +15,13 @@ Enable with: echo 1 > /proc/sys/net/bridge/bridge-nf-filter-vlan-tagged
 Based on MediaTek SDK patch by chak-kei.lam <chak-kei.lam@mediatek.com>.
 
 Signed-off-by: Ryan Chen <rchen14b@gmail.com>
+Assisted-by: Codex:gpt-5.6-sol
+Signed-off-by: Yanghan Ye <yyh94306@gmail.com>
 ---
- net/netfilter/nf_flow_table_path.c | 31 +++++++++++++++++++++++++++++--
- 1 file changed, 29 insertions(+), 2 deletions(-)
-
+diff --git a/net/netfilter/nf_flow_table_path.c b/net/netfilter/nf_flow_table_path.c
 --- a/net/netfilter/nf_flow_table_path.c
 +++ b/net/netfilter/nf_flow_table_path.c
-@@ -153,6 +153,30 @@
+@@ -151,6 +151,30 @@
  	enum flow_offload_xmit_type xmit_type;
  };
  
@@ -35,7 +35,7 @@ Signed-off-by: Ryan Chen <rchen14b@gmail.com>
 +
 +	rcu_read_lock();
 +	port = br_port_get_rcu(pkt->skb->dev);
-+	/* when bridge vlan enabled, the vlan tag would be handled by the bridge */
++	/* The bridge handles the VLAN tag when VLAN filtering is enabled. */
 +	if (port && !br_opt_get(port->br, BROPT_VLAN_ENABLED)) {
 +		if (info->num_encaps >= NF_FLOW_TABLE_ENCAP_MAX) {
 +			info->indev = NULL;
@@ -52,17 +52,17 @@ Signed-off-by: Ryan Chen <rchen14b@gmail.com>
  static void nft_dev_path_info(const struct net_device_path_stack *stack,
  			      struct nft_forward_info *info,
  			      unsigned char *ha, struct nf_flowtable *flowtable)
-@@ -286,8 +310,12 @@
+@@ -286,8 +310,10 @@
  		nft_br_vlan_dev_fill_forward_path(pkt, &ctx);
  	}
  
 -	if (nft_dev_fill_forward_path(&ctx, route, dst, ct, dir, ha, &stack) >= 0)
 +	if (nft_dev_fill_forward_path(&ctx, route, dst, ct, dir, ha, &stack) >= 0) {
-+		/* Add VLAN pass through info if needed */
 +		nft_fill_vlan_passthrough_info(pkt, &info);
-+
  		nft_dev_path_info(&stack, &info, ha, &ft->data);
 +	}
  
  	if (!info.indev || !nft_flowtable_find_dev(info.indev, ft))
  		return -ENOENT;
+-- 
+2.43.0
