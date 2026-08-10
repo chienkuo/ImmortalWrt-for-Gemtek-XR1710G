@@ -1,0 +1,57 @@
+From: XR1710G Maintainer <maintainer@example.com>
+Subject: [PATCH] netfilter: bridge: preserve VLAN device context for bridge NF
+
+On a VLAN-aware bridge, untagged access-port packets carry their VLAN
+identity in the ingress PVID, rather than in an skb VLAN tag. When
+bridge-nf-pass-vlan-input-dev is enabled, map that PVID to the bridge VLAN
+upper device so firewall4 can match br-lan.<vid>.
+
+The forward hook also needs this logical device as its output context.
+Otherwise bridge netfilter reports the bridge master as egress, causing
+firewall4 zone egress matching to reject bridged DHCP and IP traffic.
+
+Signed-off-by: XR1710G Maintainer <maintainer@example.com>
+---
+ net/bridge/br_netfilter_hooks.c | 24 +++++++++++++++++++++---
+ 1 file changed, 21 insertions(+), 3 deletions(-)
+
+--- a/net/bridge/br_netfilter_hooks.c
++++ b/net/bridge/br_netfilter_hooks.c
+@@ -434,12 +434,26 @@ static struct net_device *brnf_get_logical_dev
+ 	struct net_device *vlan, *br;
+ 	struct brnf_net *brnet = net_generic(net, brnf_net_id);
++	struct net_bridge_port *port;
++	u16 vid;
+ 
+ 	br = bridge_parent(dev);
+ 
+-	if (brnet->pass_vlan_indev == 0 || !skb_vlan_tag_present(skb))
++	if (brnet->pass_vlan_indev == 0)
+ 		return br;
+ 
+-	vlan = __vlan_find_dev_deep_rcu(br, skb->vlan_proto,
+-				    skb_vlan_tag_get(skb) & VLAN_VID_MASK);
++	if (skb_vlan_tag_present(skb)) {
++		vid = skb_vlan_tag_get(skb) & VLAN_VID_MASK;
++	} else {
++		/* An access port carries its VLAN identity in the PVID, not skb. */
++		port = br_port_get_rcu(dev);
++		if (!port || !br_opt_get(port->br, BROPT_VLAN_ENABLED) ||
++		    br_vlan_get_pvid_rcu(dev, &vid) || !vid)
++			return br;
++	}
++
++	if (skb_vlan_tag_present(skb))
++		vlan = __vlan_find_dev_deep_rcu(br, skb->vlan_proto, vid);
++	else
++		vlan = __vlan_find_dev_deep_rcu(br, port->br->vlan_proto, vid);
+ 
+ 	return vlan ? vlan : br;
+@@ -692,3 +706,7 @@ static unsigned int br_nf_forward_ip(struct sk_buff *skb,
++	if (netif_is_bridge_master(parent) &&
++	    br_opt_get(netdev_priv(parent), BROPT_VLAN_ENABLED))
++		parent = brnf_get_logical_dev(skb, state->in, state->net);
++
+ 	nf_bridge_pull_encap_header(skb);
+ 
+ 	if (skb->pkt_type == PACKET_OTHERHOST) {
