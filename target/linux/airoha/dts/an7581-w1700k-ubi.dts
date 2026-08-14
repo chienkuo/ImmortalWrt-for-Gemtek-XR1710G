@@ -250,6 +250,7 @@
 
 	airoha,scu = <&scuclk>;
 	airoha,x2-mode;
+	airoha,np-scu = <&scuclk>;
 
 	pinctrl-names = "default";
 	pinctrl-0 = <&pcie0_rst_pins>;

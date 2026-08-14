@@ -27,24 +27,23 @@ try_git() {
 		GET_REV="$(git log -n 1 --format="%h" --until "$GET_REV")"
 		;&  # FALLTHROUGH
 	*)
-		UPSTREAM_REF="$(git rev-parse --verify upstream/master 2>/dev/null)"
-		if [ -z "$UPSTREAM_REF" ]; then
-			BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-			UPSTREAM_REF="$(git rev-parse --verify --symbolic-full-name ${BRANCH}@{u} 2>/dev/null)"
-			[ -n "$UPSTREAM_REF" ] || UPSTREAM_REF="$(git rev-parse --verify --symbolic-full-name main@{u} 2>/dev/null)"
-		fi
+		BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+		ORIGIN="$(git rev-parse --verify --symbolic-full-name ${BRANCH}@{u} 2>/dev/null)"
+		[ -n "$ORIGIN" ] || ORIGIN="$(git rev-parse --verify --symbolic-full-name main@{u} 2>/dev/null)"
+		REV="$(git rev-list ${REBOOT}..$GET_REV 2>/dev/null | wc -l | awk '{print $1}')"
 
-		if [ -n "$UPSTREAM_REF" ]; then
-			UPSTREAM_BASE="$(git merge-base $GET_REV $UPSTREAM_REF)"
-			UPSTREAM_HASH="$(git log -n 1 --no-show-signature --format="%h" $UPSTREAM_BASE)"
+		if [ -n "$ORIGIN" ]; then
+			UPSTREAM_BASE="$(git merge-base $GET_REV $ORIGIN)"
+			UPSTREAM_REV="$(git rev-list ${REBOOT}..$UPSTREAM_BASE 2>/dev/null | wc -l | awk '{print $1}')"
 		else
-			UPSTREAM_HASH="$(git log -n 1 --no-show-signature --format="%h" $GET_REV)"
+			UPSTREAM_REV=0
 		fi
 
-		LOCAL_HASH="$(git log -n 1 --no-show-signature --format="%h" $GET_REV)"
-		BUILD_DATE="$(date +%Y-%-m-%-d)"
+		if [ "$REV" -gt "$UPSTREAM_REV" ]; then
+			REV="${UPSTREAM_REV}+$((REV - UPSTREAM_REV))"
+		fi
 
-		REV="${BUILD_DATE}-${UPSTREAM_HASH}-${LOCAL_HASH}"
+		REV="${REV:+r$REV-$(git log -n 1 --no-show-signature --format="%h" $UPSTREAM_BASE)}"
 
 		;;
 	esac
