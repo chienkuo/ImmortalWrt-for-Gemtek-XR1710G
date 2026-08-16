@@ -12,9 +12,14 @@ apply_offload() {
 
 	[ -d /proc/sys/net/bridge ] || return 0
 
-	config_get vlan offload vlan 0
-	config_get pppoe offload pppoe 0
-	config_get ap_mode offload ap_mode 0
+	# The offload section in /etc/config/airoha_npu is anonymous
+	# (config offload), so access it via the @offload[0] index syntax.
+	vlan=$(uci -q get airoha_npu.@offload[0].vlan)
+	pppoe=$(uci -q get airoha_npu.@offload[0].pppoe)
+	ap_mode=$(uci -q get airoha_npu.@offload[0].ap_mode)
+	[ -n "$vlan" ] || vlan=0
+	[ -n "$pppoe" ] || pppoe=0
+	[ -n "$ap_mode" ] || ap_mode=0
 
 	echo "$vlan" > /proc/sys/net/bridge/bridge-nf-filter-vlan-tagged 2>/dev/null
 	echo "$pppoe" > /proc/sys/net/bridge/bridge-nf-filter-pppoe-tagged 2>/dev/null
@@ -32,6 +37,5 @@ apply_offload() {
 }
 
 start() {
-	config_load airoha_npu
 	apply_offload
 }

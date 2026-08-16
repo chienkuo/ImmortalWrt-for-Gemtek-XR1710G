@@ -623,7 +623,7 @@ get_frame_engine() {
 
 get_vlan_offload() {
 	local val
-	val=$(uci -q get airoha_npu.offload.vlan)
+	val=$(uci -q get airoha_npu.@offload[0].vlan)
 	printf '{"enabled":%d}' "${val:-0}"
 }
 
@@ -635,7 +635,7 @@ set_vlan_offload() {
 		echo '{"error":"enabled must be 0 or 1"}'
 		return
 	fi
-	uci -q set airoha_npu.offload.vlan="$enabled"
+	uci -q set airoha_npu.@offload[0].vlan="$enabled"
 	uci -q commit airoha_npu
 	# Apply immediately if bridge is available
 	echo "$enabled" > /proc/sys/net/bridge/bridge-nf-filter-vlan-tagged 2>/dev/null
@@ -644,7 +644,7 @@ set_vlan_offload() {
 
 get_pppoe_offload() {
 	local val
-	val=$(uci -q get airoha_npu.offload.pppoe)
+	val=$(uci -q get airoha_npu.@offload[0].pppoe)
 	printf '{"enabled":%d}' "${val:-0}"
 }
 
@@ -656,7 +656,7 @@ set_pppoe_offload() {
 		echo '{"error":"enabled must be 0 or 1"}'
 		return
 	fi
-	uci -q set airoha_npu.offload.pppoe="$enabled"
+	uci -q set airoha_npu.@offload[0].pppoe="$enabled"
 	uci -q commit airoha_npu
 	# Load bridge module if needed and apply immediately
 	if [ "$enabled" = "1" ]; then
@@ -715,7 +715,7 @@ _apmode_has_vlan_filtering() {
 get_apmode_offload() {
 	local val
 
-	val=$(uci -q get airoha_npu.offload.ap_mode)
+	val=$(uci -q get airoha_npu.@offload[0].ap_mode)
 	printf '{"enabled":%d}' "${val:-0}"
 }
 
@@ -729,7 +729,7 @@ set_apmode_offload() {
 		return
 	fi
 
-	uci -q set airoha_npu.offload.ap_mode="$enabled"
+	uci -q set airoha_npu.@offload[0].ap_mode="$enabled"
 	uci -q commit airoha_npu
 
 	modprobe br_netfilter 2>/dev/null
