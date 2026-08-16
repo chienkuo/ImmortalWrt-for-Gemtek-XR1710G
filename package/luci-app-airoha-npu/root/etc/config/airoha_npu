@@ -1,3 +1,4 @@
 config offload
 	option vlan '0'
 	option pppoe '0'
+	option ap_mode '0'

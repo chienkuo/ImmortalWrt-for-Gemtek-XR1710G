@@ -8,15 +8,27 @@
 START=21
 
 apply_offload() {
-	local vlan pppoe
+	local vlan pppoe ap_mode vlan_options
 
 	[ -d /proc/sys/net/bridge ] || return 0
 
 	config_get vlan offload vlan 0
 	config_get pppoe offload pppoe 0
+	config_get ap_mode offload ap_mode 0
 
 	echo "$vlan" > /proc/sys/net/bridge/bridge-nf-filter-vlan-tagged 2>/dev/null
 	echo "$pppoe" > /proc/sys/net/bridge/bridge-nf-filter-pppoe-tagged 2>/dev/null
+
+	if [ "$ap_mode" = "1" ]; then
+		modprobe br_netfilter 2>/dev/null
+		echo "$ap_mode" > /proc/sys/net/bridge/bridge-nf-call-iptables 2>/dev/null
+		echo "$ap_mode" > /proc/sys/net/bridge/bridge-nf-call-ip6tables 2>/dev/null
+		echo "$ap_mode" > /proc/sys/net/bridge/bridge-nf-call-arptables 2>/dev/null
+		vlan_options=0
+		[ "$(cat /proc/sys/net/bridge/bridge-nf-filter-vlan-tagged 2>/dev/null)" = "1" ] && vlan_options=1
+		echo "$vlan_options" > /proc/sys/net/bridge/bridge-nf-filter-vlan-tagged 2>/dev/null
+		echo "$vlan_options" > /proc/sys/net/bridge/bridge-nf-pass-vlan-input-dev 2>/dev/null
+	fi
 }
 
 start() {

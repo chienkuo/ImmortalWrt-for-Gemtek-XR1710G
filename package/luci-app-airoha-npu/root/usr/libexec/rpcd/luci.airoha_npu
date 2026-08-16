@@ -713,21 +713,10 @@ _apmode_has_vlan_filtering() {
 }
 
 get_apmode_offload() {
-	local ipt ip6t arp vlan_filtering filter_vlan_tagged pass_vlan_indev
+	local val
 
-	ipt=$(cat /proc/sys/net/bridge/bridge-nf-call-iptables 2>/dev/null)
-	ip6t=$(cat /proc/sys/net/bridge/bridge-nf-call-ip6tables 2>/dev/null)
-	arp=$(cat /proc/sys/net/bridge/bridge-nf-call-arptables 2>/dev/null)
-	vlan_filtering=$(_apmode_has_vlan_filtering)
-	filter_vlan_tagged=$(cat /proc/sys/net/bridge/bridge-nf-filter-vlan-tagged 2>/dev/null)
-	pass_vlan_indev=$(cat /proc/sys/net/bridge/bridge-nf-pass-vlan-input-dev 2>/dev/null)
-
-	if [ "$ipt" = "1" ] && [ "$ip6t" = "1" ] && [ "$arp" = "1" ] && \
-	   { [ "$vlan_filtering" = "0" ] || { [ "$filter_vlan_tagged" = "1" ] && [ "$pass_vlan_indev" = "1" ]; }; }; then
-		printf '{"enabled":1}'
-	else
-		printf '{"enabled":0}'
-	fi
+	val=$(uci -q get airoha_npu.offload.ap_mode)
+	printf '{"enabled":%d}' "${val:-0}"
 }
 
 set_apmode_offload() {
@@ -739,6 +728,9 @@ set_apmode_offload() {
 		echo '{"error":"enabled must be 0 or 1"}'
 		return
 	fi
+
+	uci -q set airoha_npu.offload.ap_mode="$enabled"
+	uci -q commit airoha_npu
 
 	modprobe br_netfilter 2>/dev/null
 	vlan_filtering=$(_apmode_has_vlan_filtering)
