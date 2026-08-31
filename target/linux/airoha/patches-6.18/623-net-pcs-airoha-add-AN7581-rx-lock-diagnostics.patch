@@ -9,26 +9,39 @@ missing SerDes signal from a CDR recovery reset and track the reset
 count per PCS port. The existing RX-lock recovery behavior remains
 unchanged.
 
+The USXGMII AN-down notice is emitted once per link-down episode
+instead of on every phylink poll: an idle port with no cable plugged
+would otherwise flood the log at the ratelimit budget (~2 lines/s)
+forever.
+
 Signed-off-by: naoki66 <naoki66@qq.com>
 ---
- drivers/net/pcs/airoha/pcs-airoha-common.c |  5 +++++
- drivers/net/pcs/airoha/pcs-airoha.h        |  2 ++
+ drivers/net/pcs/airoha/pcs-airoha-common.c | 13 ++++++++++++
+ drivers/net/pcs/airoha/pcs-airoha.h        |  3 ++-
  drivers/net/pcs/airoha/pcs-an7581.c        | 32 +++++++++++++++++++++--
- 3 files changed, 39 insertions(+), 3 deletions(-)
+ 3 files changed, 48 insertions(+), 3 deletions(-)
 
 diff --git a/drivers/net/pcs/airoha/pcs-airoha-common.c b/drivers/net/pcs/airoha/pcs-airoha-common.c
 index ba1aa2050fc..dc9c06fec9c 100644
 --- a/drivers/net/pcs/airoha/pcs-airoha-common.c
 +++ b/drivers/net/pcs/airoha/pcs-airoha-common.c
-@@ -427,6 +427,11 @@ static void airoha_pcs_get_state_usxgmii(struct airoha_pcs_priv *priv, int index
+@@ -427,6 +427,19 @@ static void airoha_pcs_get_state_usxgmii(struct airoha_pcs_priv *priv, int index
  	state->an_complete = !!(an_done & AIROHA_PCS_USXGMII_PCS_AN_COMPLETE);
- 
+
  	phylink_decode_usxgmii_word(state, lpa);
 +
-+	if (data->rxlock_workaround && !state->link)
-+		dev_info_ratelimited(priv->dev,
-+				     "port %d USXGMII AN down: stats0=%#010x stats2=%#010x\n",
-+				     index, lpa, an_done);
++	/* Report a link-down once per episode; an idle port (no cable)
++	 * would otherwise print on every phylink poll.
++	 */
++	if (data->rxlock_workaround && !state->link &&
++	    !priv->rxlock_link_logged[index]) {
++		priv->rxlock_link_logged[index] = true;
++		dev_info(priv->dev,
++			 "port %d USXGMII AN down: stats0=%#010x stats2=%#010x\n",
++			 index, lpa, an_done);
++	} else if (state->link) {
++		priv->rxlock_link_logged[index] = false;
++	}
  }
  
  static void airoha_pcs_get_state_10gbaser(struct airoha_pcs_priv *priv, int index,
@@ -36,11 +49,12 @@ diff --git a/drivers/net/pcs/airoha/pcs-airoha.h b/drivers/net/pcs/airoha/pcs-ai
 index e079955c82f..0c823c1f8b7 100644
 --- a/drivers/net/pcs/airoha/pcs-airoha.h
 +++ b/drivers/net/pcs/airoha/pcs-airoha.h
-@@ -1657,6 +1657,8 @@ struct airoha_pcs_priv {
+@@ -1657,6 +1657,9 @@ struct airoha_pcs_priv {
  	struct reset_control *xfi_rst;
  	struct reset_control_bulk_data rsts[AIROHA_PCS_MAX_NUM_RSTS];
- 
+
 +	u32 rxlock_reset_count[2];
++	bool rxlock_link_logged[2];
 +
  	struct phy *phy;
  
