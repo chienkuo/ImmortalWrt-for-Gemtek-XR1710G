@@ -5,25 +5,24 @@ The RTL826x firmware tables are shared by several PHY variants and boards,
 so board-specific host-side SerDes setup does not belong in those tables.
 
 Allow a board to provide the value for the RTL826x host-side SDS mode
-register through the optional realtek,sds-mode property.  Apply it after
+register through the optional realtek,sds-mode property. Apply it after
 the common firmware table, since the table loader resets and initializes
 the SerDes block.
 
-This is needed on the Gemtek XR1710G LAN2 path.  Its vendor U-Boot writes
+This is needed on the Gemtek XR1710G LAN2 path. Its vendor U-Boot writes
 SDS page 6 register 3 to 0x88c6, while the common Linux initialization
 sequence currently leaves that board setting out.
 
 Signed-off-by: naoki66 <naoki66@qq.com>
-
 ---
- drivers/net/phy/realtek/phy_patch_rtl826x.c |  4 ++--
+ drivers/net/phy/realtek/phy_patch_rtl826x.c |  4 +--
  drivers/net/phy/realtek/phy_patch_rtl826x.h |  2 ++
  drivers/net/phy/realtek/realtek_main.c      | 39 +++++++++++++++++++++
  3 files changed, 43 insertions(+), 2 deletions(-)
 
 --- a/drivers/net/phy/realtek/phy_patch_rtl826x.c
 +++ b/drivers/net/phy/realtek/phy_patch_rtl826x.c
-@@ -84,7 +84,7 @@ static int rtl826x_phy_patch_sds_get(stru
+@@ -84,8 +84,8 @@ static int rtl826x_phy_patch_sds_get(stru
  	return phy_read_mmd(phydev, MDIO_MMD_VEND1, 0x142);
  }
  
@@ -33,6 +32,7 @@ Signed-off-by: naoki66 <naoki66@qq.com>
 +			      u32 sds_reg, u32 data)
  {
  	u32 sds_addr = 0x8800 + (sds_reg << 6) + sds_page;
+ 
 --- a/drivers/net/phy/realtek/phy_patch_rtl826x.h
 +++ b/drivers/net/phy/realtek/phy_patch_rtl826x.h
 @@ -5,6 +5,8 @@
