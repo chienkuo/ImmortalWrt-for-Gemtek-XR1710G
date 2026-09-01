@@ -33,10 +33,11 @@ Assisted-by: Codex:GPT-5.6-sol
  struct airoha_pcs_priv {
  	struct device *dev;
  	const struct airoha_pcs_match_data *data;
-@@ -1659,6 +1665,8 @@
+@@ -1659,7 +1666,9 @@
  	struct phy *phy;
  
  	bool manual_rx_calib;
+	bool needs_full_init;
 +	bool tx_fir_override;
 +	struct airoha_pcs_tx_fir tx_fir;
  };
