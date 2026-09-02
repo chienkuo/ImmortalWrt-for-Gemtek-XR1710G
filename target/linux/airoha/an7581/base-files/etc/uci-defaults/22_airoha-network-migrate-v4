@@ -9,14 +9,17 @@ migrated=0
 
 normalize_xr1710g_netdev() {
 	case "$1" in
-	ae_wan|wan|eth0)
-		printf 'eth1'
+	ae_wan|eth0)
+		printf 'wan'
 		;;
-	ae_wan.*|wan.*)
-		printf 'eth1.%s' "${1#*.}"
+	ae_wan.*|eth0.*)
+		printf 'wan.%s' "${1#*.}"
 		;;
-	ae_wan:*|wan:*)
-		printf 'eth1:%s' "${1#*:}"
+	ae_wan:*|eth0:*)
+		printf 'wan:%s' "${1#*:}"
+		;;
+	wan|wan.*|wan:*)
+		printf '%s' "$1"
 		;;
 	lan1)
 		printf 'eth2'
