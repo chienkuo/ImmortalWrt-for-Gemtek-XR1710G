@@ -1,0 +1,106 @@
+From: zhangjianguo <janegle@gmail.com>
+Subject: [PATCH] net: phy: realtek: full PHY reset when SerDes pulses fail
+
+Cable hotplug can leave the RTL8261BE host-side USXGMII AN engine stuck:
+copper negotiates 10G but the PCS receives no partner word
+(AN_STATS_0 stays zero) and the PHY drops the copper link ~40ms later.
+The flow_s SerDes pulses from the RTK SerDes retry loop cannot restart
+that engine, so the port never comes back until a reboot or an interface
+restart.
+
+Escalate to a full PHY reset (vendor 0x145 reset, patch table reload and
+SDS reconfiguration - the config_init() sequence) after 5 failed pulses,
+bounded to 3 full resets to avoid an infinite recovery loop.
+
+Signed-off-by: zhangjianguo <janegle@gmail.com>
+---
+--- a/drivers/net/phy/realtek/realtek.h
++++ b/drivers/net/phy/realtek/realtek.h
+@@ -20,6 +20,7 @@
+ 	enum rtl826x_rtk_serdes_state rtk_serdes_state;
+ 	u32 rtk_serdes_pulse_count;
+ 	u8 rtk_serdes_carrier_polls;
++	u8 rtk_serdes_full_resets;
+ 	bool enable_pma_low_power:1;
+ 	bool patch_rtk_serdes:1;
+ };
+--- a/drivers/net/phy/realtek/realtek_main.c
++++ b/drivers/net/phy/realtek/realtek_main.c
+@@ -2653,6 +2653,54 @@
+ 	return genphy_c45_check_and_restart_aneg(phydev, changed);
+ }
+ 
++static int rtl826x_rtk_serdes_full_reset(struct phy_device *phydev)
++{
++	struct rtl826x_priv *priv = phydev->priv;
++	unsigned int tries = 0;
++	int ret;
++
++	phydev_info(phydev,
++		    "RTK SerDes pulses failed to recover carrier, full PHY reset\n");
++
++	/* Vendor 0x145 reset, then reload the patch table and SDS
++	 * configuration - the same sequence config_init() runs. A stuck
++	 * host-side USXGMII AN engine after cable hotplug needs this full
++	 * reset; the flow_s pulses alone cannot restart it.
++	 */
++	ret = phy_set_bits_mmd(phydev, MDIO_MMD_VEND1, 0x145, BIT(0));
++	if (ret < 0)
++		return ret;
++
++	do {
++		msleep(30);
++		tries++;
++		ret = phy_clear_bits_mmd(phydev, MDIO_MMD_VEND1, 0x145, BIT(0));
++	} while (ret < 0 && tries <= 5);
++	if (ret < 0)
++		return ret;
++
++	msleep(30);
++
++	ret = rtlgen_phy_patch(phydev);
++	if (ret)
++		return ret;
++
++	ret = rtl826x_config_sds_mode(phydev);
++	if (ret)
++		return ret;
++
++	ret = rtl826x_config_serdes_polarity(phydev);
++	if (ret)
++		return ret;
++
++	priv->rtk_serdes_pulse_count = 0;
++	priv->rtk_serdes_carrier_polls = 0;
++	priv->rtk_serdes_full_resets++;
++	priv->rtk_serdes_state = RTL826X_RTK_SERDES_PULSE;
++
++	return 0;
++}
++
+ static int rtl826x_rtk_serdes_pulse(struct phy_device *phydev)
+ {
+ 	struct rtl826x_priv *priv = phydev->priv;
+@@ -2793,6 +2841,22 @@
+ 			return 0;
+ 
+ 		priv->rtk_serdes_carrier_polls = 0;
++
++		if (priv->rtk_serdes_pulse_count >= 5) {
++			/* Repeated pulses did not recover the PCS carrier:
++			 * the host-side AN engine is stuck. Escalate to a
++			 * full PHY reset, but stop after a few attempts to
++			 * avoid an infinite recovery loop.
++			 */
++			if (priv->rtk_serdes_full_resets < 3)
++				return rtl826x_rtk_serdes_full_reset(phydev);
++
++			phydev_err(phydev,
++				   "RTK SerDes recovery failed after %u full resets\n",
++				   priv->rtk_serdes_full_resets);
++			priv->rtk_serdes_state = RTL826X_RTK_SERDES_IDLE;
++			return 0;
++		}
+ 
+ 		return rtl826x_rtk_serdes_pulse(phydev);
+ 	case RTL826X_RTK_SERDES_IDLE:
