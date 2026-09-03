@@ -1,0 +1,65 @@
+From: zhangjianguo <janegle@gmail.com>
+Subject: [PATCH] net: phy: realtek: recover degraded capability read after hotplug
+
+Unplugging the cable from an RTL8261BE can wedge the internal firmware:
+the C45 PMA speed-ability registers then only report 100M. phylib runs
+get_features() before config_init()'s vendor 0x145 reset, so the degraded
+read permanently pins supported/advertising to 100M and auto-negotiation
+can never reach 1G/10G again until a full reboot.
+
+Detect the degraded read (no 1000baseT capability) in rtl826x_get_features()
+and run the vendor reset in place before re-reading the abilities. This
+recovers the XR1710G 10G LAN port after unplugging the peer device.
+
+Signed-off-by: zhangjianguo <janegle@gmail.com>
+---
+--- a/drivers/net/phy/realtek/realtek_main.c
++++ b/drivers/net/phy/realtek/realtek_main.c
+@@ -2539,6 +2539,47 @@
+ 	ret = genphy_c45_pma_read_abilities(phydev);
+ 	if (ret)
+ 		return ret;
++
++	/* A 10G PHY that reports no 1G capability has a wedged firmware:
++	 * unplugging the cable can leave the internal state machine degraded
++	 * so that the C45 PMA speed-ability registers only advertise 100M.
++	 * phylib calls get_features() before config_init()'s vendor 0x145
++	 * reset, so a degraded read would permanently pin supported and
++	 * advertising to 100M and auto-negotiation could never reach 1G/10G
++	 * again. Run the vendor reset here and re-read the abilities.
++	 */
++	if (!linkmode_test_bit(ETHTOOL_LINK_MODE_1000baseT_Full_BIT,
++			       phydev->supported)) {
++		unsigned int tries;
++
++		phydev_info(phydev,
++			    "capability read degraded (no 1G+), resetting PHY\n");
++
++		for (tries = 0; tries < 5; tries++) {
++			ret = phy_set_bits_mmd(phydev, MDIO_MMD_VEND1, 0x145,
++					       BIT(0));
++			if (ret < 0)
++				return ret;
++			msleep(30);
++			ret = phy_clear_bits_mmd(phydev, MDIO_MMD_VEND1, 0x145,
++						 BIT(0));
++			if (ret < 0)
++				continue;
++			msleep(30);
++
++			ret = genphy_c45_pma_read_abilities(phydev);
++			if (ret)
++				return ret;
++			if (linkmode_test_bit(ETHTOOL_LINK_MODE_1000baseT_Full_BIT,
++					      phydev->supported))
++				break;
++		}
++
++		if (!linkmode_test_bit(ETHTOOL_LINK_MODE_1000baseT_Full_BIT,
++				       phydev->supported))
++			phydev_warn(phydev,
++				    "capability still degraded after reset\n");
++	}
+ 
+ 	/* not support 10M modes */
+ 	linkmode_clear_bit(ETHTOOL_LINK_MODE_10baseT_Half_BIT,
