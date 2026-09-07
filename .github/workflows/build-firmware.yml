@@ -58,6 +58,7 @@ jobs:
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+          bash scripts/fix-stale-golang-host.sh
 
       - name: Configure
         run: |
@@ -82,6 +83,7 @@ jobs:
         if: always()
         run: |
           if [ -f build.log ]; then
+            bash scripts/summarize-build-errors.sh build.log || true
             tail -100 build.log
           fi
           echo "=== List all files in bin/targets/airoha/an7581/ ==="
