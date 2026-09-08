@@ -1,0 +1,58 @@
+From: zhangjianguo <janegle@gmail.com>
+Subject: [PATCH] net: phy: realtek: pulse USXGMII SerDes block reset in full reset
+
+Cable hotplug can leave the RTL8261BE host-side USXGMII AN engine stuck:
+copper negotiates while the AN7581 PCS receives no partner word
+(AN_STATS_0 stays zero) and the netdev carrier never comes up.  The
+vendor 0x145 reset + patch-table reload + SDS reconfiguration in
+rtl826x_rtk_serdes_full_reset() does not pulse the SerDes block itself.
+
+The generic driver's link-up SDS reset (SDS page 0x20/0x02, assert
+0x40 -> release 0xc0) is a no-op in this failure mode because the
+PHY-side SerDes link bit is already set; only the netdev-carrier-down
+path taken by 744/746 triggers at the right time.  Pulse the SerDes
+block reset there as well, giving the stuck host AN engine a clean
+DTE-XS restart before the retry loop re-arms.
+
+Note: no TXPLL reset is performed - no reliable register sequence for
+the RTL8261 TXPLL reset is available, and the generic driver's own SDS
+reset does not touch the PLL either.
+
+Signed-off-by: zhangjianguo <janegle@gmail.com>
+---
+ drivers/net/phy/realtek/realtek_main.c | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+--- a/drivers/net/phy/realtek/realtek_main.c
++++ b/drivers/net/phy/realtek/realtek_main.c
+@@ -2700,11 +2700,28 @@ static int rtl826x_rtk_serdes_full_reset(struct phy_device *phydev)
+ 	ret = rtl826x_config_serdes_polarity(phydev);
+ 	if (ret)
+ 		return ret;
+
++	/*
++	 * Pulse the USXGMII SerDes block reset (assert 0x40 -> release
++	 * 0xc0 on SDS page 0x20/reg 0x02), the same DTE-XS reset the
++	 * generic driver performs on link up.  In this failure mode the
++	 * PHY-side SerDes link bit is already up so the generic link-up
++	 * path never fires; only the netdev-carrier-down recovery that
++	 * reached us triggers at the right moment.
++	 */
++	ret = rtl826x_phy_patch_sds_set(phydev, 0x20, 0x02, 0x40);
++	if (ret < 0)
++		return ret;
++	msleep(20);
++	ret = rtl826x_phy_patch_sds_set(phydev, 0x20, 0x02, 0xc0);
++	if (ret < 0)
++		return ret;
++	msleep(100);
++
+ 	priv->rtk_serdes_pulse_count = 0;
+ 	priv->rtk_serdes_carrier_polls = 0;
+ 	priv->rtk_serdes_full_resets++;
+ 	priv->rtk_serdes_state = RTL826X_RTK_SERDES_PULSE;
+
+ 	return 0;
+ }
+--
+2.43.0
