@@ -10,7 +10,6 @@ var callTokenInfo = rpc.declare({ object: 'luci.airoha_npu', method: 'getTokenIn
 var callFrameEngine = rpc.declare({ object: 'luci.airoha_npu', method: 'getFrameEngine' });
 var callSetGovernor = rpc.declare({ object: 'luci.airoha_npu', method: 'setGovernor', params: ['governor'] });
 var callSetMaxFreq = rpc.declare({ object: 'luci.airoha_npu', method: 'setMaxFreq', params: ['freq'] });
-var callSetOverclock = rpc.declare({ object: 'luci.airoha_npu', method: 'setOverclock', params: ['freq_mhz'] });
 var callGetVlanOffload = rpc.declare({ object: 'luci.airoha_npu', method: 'getVlanOffload' });
 var callSetVlanOffload = rpc.declare({ object: 'luci.airoha_npu', method: 'setVlanOffload', params: ['enabled'] });
 var callGetPppoeOffload = rpc.declare({ object: 'luci.airoha_npu', method: 'getPppoeOffload' });
@@ -19,6 +18,7 @@ var callGetFlowOffload = rpc.declare({ object: 'luci.airoha_npu', method: 'getFl
 var callSetFlowOffload = rpc.declare({ object: 'luci.airoha_npu', method: 'setFlowOffload', params: ['enabled'] });
 var callGetApModeOffload = rpc.declare({ object: 'luci.airoha_npu', method: 'getApModeOffload' });
 var callSetApModeOffload = rpc.declare({ object: 'luci.airoha_npu', method: 'setApModeOffload', params: ['enabled'] });
+var callGetDeviceMode = rpc.declare({ object: 'luci.airoha_npu', method: 'getDeviceMode' });
 
 /* ── Theme-adaptive CSS ── */
 var themeCSS = '\
@@ -49,12 +49,11 @@ var themeCSS = '\
 .npu-section h4{font-size:14px;line-height:1.4;font-weight:600;letter-spacing:0;margin-top:14px!important;padding-top:12px;border-top:1px solid var(--soc-border)}\
 .npu-details-table{margin:0}\
 .cpu-panel-grid{display:grid;grid-template-columns:minmax(250px,.85fr) minmax(360px,1.15fr);gap:8px}\
-.cpu-control-grid{display:grid;grid-template-columns:minmax(300px,1.25fr) minmax(250px,.75fr);gap:8px;margin-top:8px}\
+.cpu-control-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-top:8px}\
 .cpu-panel-card{background:var(--soc-card-bg);border:1px solid var(--soc-border);border-left:3px solid var(--cpu-panel-accent,var(--soc-border));border-radius:8px;padding:11px 14px;min-height:96px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:center}\
 .cpu-panel-card.cpu-info{--cpu-panel-accent:#00c8ff}\
 .cpu-panel-card.cpu-frequency{--cpu-panel-accent:#00cc44}\
 .cpu-panel-card.cpu-controls{--cpu-panel-accent:#00c8ff}\
-.cpu-panel-card.cpu-overclock{--cpu-panel-accent:#f5a623}\
 .cpu-panel-title{font-size:11px;line-height:1.35;text-transform:uppercase;letter-spacing:0;color:var(--soc-muted);font-family:var(--airoha-font-ui);font-weight:600;margin-bottom:9px}\
 .cpu-panel-body{color:var(--soc-text);font-size:13px;line-height:1.5}\
 .cpu-info-line{display:flex;align-items:center;gap:8px;flex-wrap:wrap;line-height:1.5}\
@@ -66,8 +65,6 @@ var themeCSS = '\
 .cpu-setting{display:flex;align-items:center;gap:8px;min-width:190px;flex:1}\
 .cpu-setting-label{font-size:12px;line-height:1.4;font-weight:500;color:var(--soc-muted);font-family:var(--airoha-font-ui);white-space:nowrap}\
 .cpu-setting .cbi-input-select{flex:1;min-width:0!important}\
-.cpu-overclock-controls{display:grid;grid-template-columns:minmax(130px,1fr) auto;gap:8px;align-items:center;width:100%}\
-.cpu-oc-input{width:100%!important;min-width:0}\
 .npu-frame-wrap{margin-top:8px;border:1px solid var(--soc-border);border-radius:8px;padding:10px;background:var(--soc-card-bg)}\
 .fe-cdm-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:10px}\
 .fe-wifi-band-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}\
@@ -96,10 +93,11 @@ var themeCSS = '\
 .npu-toggle-input:checked+.npu-toggle-track{background:#22c55e;border-color:#16a34a}\
 .npu-toggle-input:checked+.npu-toggle-track:before{transform:translateX(22px)}\
 .npu-toggle-input:focus-visible+.npu-toggle-track{box-shadow:0 0 0 3px rgba(0,200,255,.25)}\
-.npu-toggle-input:disabled+.npu-toggle-track{opacity:.55;cursor:wait}\
+.npu-toggle-input:disabled+.npu-toggle-track{opacity:.55;cursor:not-allowed}\
 .offload-badge{font-size:12px;font-weight:600;line-height:1.4;letter-spacing:0;padding:0;border:0;background:transparent;font-family:var(--airoha-font-ui);display:inline-flex;align-items:center;white-space:nowrap}\
 .offload-on{color:#16a34a}\
 .offload-off{color:#6b7280}\
+.offload-blocked{color:#f59e0b}\
 @media(max-width:1050px){.npu-summary-grid{grid-template-columns:repeat(2,minmax(180px,1fr))}.offload-row{grid-template-columns:repeat(2,minmax(180px,1fr))}.cpu-panel-grid,.cpu-control-grid{grid-template-columns:1fr}}\
 @media(max-width:640px){.npu-summary-grid,.offload-row,.fe-cdm-grid,.fe-wifi-band-grid{grid-template-columns:1fr}.npu-section{padding:11px}.cpu-panel-card{padding:10px 12px}.cpu-freq-scale{gap:6px}.cpu-freq-edge{min-width:44px;font-size:10px}.offload-item{min-height:62px;padding:12px 14px}.offload-controls{min-width:132px}}\
 ';
@@ -208,6 +206,11 @@ function retryPct(s) {
 
 function isEnabled(value) {
 	return value === true || value === 1 || value === '1';
+}
+
+function isBridgeOffloadBlocked(mode) {
+	mode = mode || {};
+	return isEnabled(mode.bridge_offload_blocked);
 }
 
 function npuSummaryData(st) {
@@ -501,46 +504,69 @@ function renderMaxFreqSelect(avail, cur) {
 	}}, fs.map(function(f){return E('option',{'value':f,'selected':parseInt(f)===parseInt(cur)?'':null},(parseInt(f)/1000).toFixed(0)+' MHz');}));
 }
 
-function renderOcControls() {
-	var frequencies = [1200, 1250, 1300, 1350, 1400];
-	var inp = E('select', {'id':'oc-freq-input','class':'cbi-input-select cpu-oc-input'}, frequencies.map(function(freq) {
-		return E('option', {'value':freq, 'selected':freq === 1200 ? '' : null}, freq + ' MHz');
-	}));
-	var btn = E('button',{'class':'cbi-button cbi-button-action','click':function(){
-		var f=parseInt(document.getElementById('oc-freq-input').value);
-		if(frequencies.indexOf(f) === -1){ui.addNotification(null,E('p',{},'请选择 1200-1400 MHz 的预设频率'),'error');return;}
-		if(f>1200&&!confirm(_('Frequencies above 1200 MHz use extended DTS OPP entries and may increase heat or reduce stability. Continue?'))) return;
-		btn.disabled=true;btn.textContent=_('Applying...');
-		callSetOverclock(f).then(function(r){btn.disabled=false;btn.textContent=_('Apply');
-			if(r&&r.error) ui.addNotification(null,E('p',{},_('Failed: ')+r.error),'error');
-			else if(r&&r.result==='ok') {
-				var msg = _('CPU set to ')+r.actual_mhz+' MHz';
-				if(r.warning) msg += ' — ' + r.warning;
-				ui.addNotification(null,E('p',{},msg), r.warning ? 'warning' : 'info');
-			}
-		}).catch(function(e){btn.disabled=false;btn.textContent=_('Apply');});
-	}},_('Apply'));
-	return E('div',{'class':'cpu-overclock-controls'},[
-		inp, btn
-	]);
+function offloadBadgeState(enabled, blocked) {
+	enabled = isEnabled(enabled);
+	blocked = isEnabled(blocked);
+
+	if (blocked && enabled)
+		return { cls: 'offload-blocked', text: '\u8bf7\u5173\u95ed' };
+	if (blocked)
+		return { cls: 'offload-blocked', text: '\u8def\u7531\u6a21\u5f0f\u7981\u7528' };
+
+	return enabled
+		? { cls: 'offload-on', text: '\u5df2\u5f00\u542f' }
+		: { cls: 'offload-off', text: '\u5df2\u7981\u7528' };
 }
 
-function renderOffloadBadge(enabled, id) {
-	enabled = isEnabled(enabled);
+function renderOffloadBadge(enabled, id, blocked) {
+	var state = offloadBadgeState(enabled, blocked);
 	return E('span', {
 		'id': id,
-		'class': 'offload-badge ' + (enabled ? 'offload-on' : 'offload-off')
-	}, enabled ? '\u5df2\u5f00\u542f' : '\u5df2\u7981\u7528');
+		'class': 'offload-badge ' + state.cls
+	}, state.text);
 }
 
-function renderOffloadSelect(enabled, id, callFn, badgeId) {
+function updateOffloadControl(selectId, badgeId, enabled, blocked) {
 	enabled = isEnabled(enabled);
+	blocked = isEnabled(blocked);
+
+	var sel = document.getElementById(selectId);
+	if (sel) {
+		sel.setAttribute('data-blocked', blocked ? '1' : '0');
+		if (!sel.matches(':focus'))
+			sel.checked = enabled;
+		sel.disabled = blocked && !enabled;
+	}
+
+	var b = document.getElementById(badgeId);
+	if (b) {
+		var state = offloadBadgeState(enabled, blocked);
+		b.className = 'offload-badge ' + state.cls;
+		b.textContent = state.text;
+	}
+
+	var label = sel ? sel.closest('label') : null;
+	if (label)
+		label.title = blocked
+			? (enabled ? '\u8def\u7531\u6a21\u5f0f\u4e0b\u5efa\u8bae\u5173\u95ed' : '\u8def\u7531\u6a21\u5f0f\u4f7f\u7528\u786c\u4ef6\u6d41\u91cf\u52a0\u901f')
+			: (enabled ? '\u70b9\u51fb\u7981\u7528' : '\u70b9\u51fb\u542f\u7528');
+}
+
+function renderOffloadSelect(enabled, id, callFn, badgeId, blocked) {
+	enabled = isEnabled(enabled);
+	blocked = isEnabled(blocked);
 	var toggle = E('input', {
 		'id': id,
 		'type': 'checkbox',
 		'class': 'npu-toggle-input',
 		'change': function(ev) {
 			var val = ev.target.checked ? 1 : 0;
+			var currentBlocked = ev.target.getAttribute('data-blocked') === '1';
+			if (currentBlocked && val === 1) {
+				ev.target.checked = false;
+				ui.addNotification(null, E('p', {}, '\u8def\u7531\u6a21\u5f0f\u4e0b\u8bf7\u53ea\u4f7f\u7528\u786c\u4ef6\u6d41\u91cf\u52a0\u901f'), 'warning');
+				return;
+			}
 			ev.target.disabled = true;
 			callFn(val).then(function(r) {
 				ev.target.disabled = false;
@@ -548,11 +574,7 @@ function renderOffloadSelect(enabled, id, callFn, badgeId) {
 					ev.target.checked = !val;
 					ui.addNotification(null, E('p', {}, _('Error: ') + r.error), 'error');
 				} else {
-					var b = document.getElementById(badgeId);
-					if (b) {
-						b.className = 'offload-badge ' + (val ? 'offload-on' : 'offload-off');
-						b.textContent = val ? '\u5df2\u5f00\u542f' : '\u5df2\u7981\u7528';
-					}
+					updateOffloadControl(id, badgeId, val, currentBlocked);
 				}
 			}).catch(function() {
 				ev.target.checked = !val;
@@ -561,12 +583,19 @@ function renderOffloadSelect(enabled, id, callFn, badgeId) {
 		}
 	});
 	toggle.checked = enabled;
+	toggle.disabled = blocked && !enabled;
+	toggle.setAttribute('data-blocked', blocked ? '1' : '0');
 	return E('div', { 'class': 'offload-controls' }, [
-		E('label', { 'class': 'npu-toggle', 'title': enabled ? '\u70b9\u51fb\u7981\u7528' : '\u70b9\u51fb\u542f\u7528' }, [
+		E('label', {
+			'class': 'npu-toggle',
+			'title': blocked
+				? (enabled ? '\u8def\u7531\u6a21\u5f0f\u4e0b\u5efa\u8bae\u5173\u95ed' : '\u8def\u7531\u6a21\u5f0f\u4f7f\u7528\u786c\u4ef6\u6d41\u91cf\u52a0\u901f')
+				: (enabled ? '\u70b9\u51fb\u7981\u7528' : '\u70b9\u51fb\u542f\u7528')
+		}, [
 			toggle,
 			E('span', { 'class': 'npu-toggle-track' })
 		]),
-		renderOffloadBadge(enabled, badgeId)
+		renderOffloadBadge(enabled, badgeId, blocked)
 	]);
 }
 
@@ -618,6 +647,8 @@ return view.extend({
 		var st = data[0]||{}, ppe = data[1]||{}, ti = data[2]||{}, fe = data[3]||{};
 		var vo = data[4]||{enabled:0}, ppo = data[5]||{enabled:0}, flo = data[6]||{enabled:0};
 		var apo = data[7]||{enabled:0};
+		var dm = data[8]||{};
+		var bridgeBlocked = isBridgeOffloadBlocked(dm);
 		var entries = Array.isArray(ppe.entries) ? ppe.entries : [];
 		var memR = Array.isArray(st.memory_regions) ? st.memory_regions : [];
 		var ppeUpdatesPaused = false;
@@ -670,10 +701,6 @@ return view.extend({
 					E('div',{'class':'cpu-panel-card cpu-controls'},[
 						E('div',{'class':'cpu-panel-title'},_('Control Settings')),
 						E('div',{'id':'cpu-control-content','class':'cpu-panel-body'},buildControlSettingsContent(st))
-					]),
-					E('div',{'class':'cpu-panel-card cpu-overclock'},[
-						E('div',{'class':'cpu-panel-title'},'CPU OPP / 超频 · 上限 1400 MHz'),
-						E('div',{'class':'cpu-panel-body'},renderOcControls())
 					])
 				])
 			]),
@@ -686,30 +713,30 @@ return view.extend({
 				E('div',{'class':'offload-item'},[
 					E('span',{'class':'offload-name'},[
 						E('span',{'class':'offload-dot'}),
-						E('span',{'class':'soc-text'},'VLAN \u52a0\u901f')
+						E('span',{'class':'soc-text'},'VLAN \u6807\u7b7e\u5378\u8f7d')
 					]),
-					renderOffloadSelect(vo.enabled, 'vlan-offload-select', function(v){return callSetVlanOffload(v);}, 'vlan-offload-badge')
+					renderOffloadSelect(vo.enabled, 'vlan-offload-select', function(v){return callSetVlanOffload(v);}, 'vlan-offload-badge', bridgeBlocked)
 				]),
 				E('div',{'class':'offload-item'},[
 					E('span',{'class':'offload-name'},[
 						E('span',{'class':'offload-dot'}),
-						E('span',{'class':'soc-text'},'PPPoE \u52a0\u901f')
+						E('span',{'class':'soc-text'},'PPPoE \u900f\u4f20\u5378\u8f7d')
 					]),
-					renderOffloadSelect(ppo.enabled, 'pppoe-offload-select', function(v){return callSetPppoeOffload(v);}, 'pppoe-offload-badge')
+					renderOffloadSelect(ppo.enabled, 'pppoe-offload-select', function(v){return callSetPppoeOffload(v);}, 'pppoe-offload-badge', bridgeBlocked)
 				]),
 				E('div',{'class':'offload-item'},[
 					E('span',{'class':'offload-name'},[
 						E('span',{'class':'offload-dot'}),
 						E('span',{'class':'soc-text'},'\u786c\u4ef6\u6d41\u91cf\u52a0\u901f')
 					]),
-					renderOffloadSelect(flo.enabled, 'flow-offload-select', function(v){return callSetFlowOffload(v);}, 'flow-offload-badge')
+					renderOffloadSelect(flo.enabled, 'flow-offload-select', function(v){return callSetFlowOffload(v);}, 'flow-offload-badge', false)
 				]),
 				E('div',{'class':'offload-item'},[
 					E('span',{'class':'offload-name'},[
 						E('span',{'class':'offload-dot'}),
 						E('span',{'class':'soc-text'},'AP \u6a21\u5f0f\u52a0\u901f')
 					]),
-					renderOffloadSelect(apo.enabled, 'apmode-offload-select', function(v){return callSetApModeOffload(v);}, 'apmode-offload-badge')
+					renderOffloadSelect(apo.enabled, 'apmode-offload-select', function(v){return callSetApModeOffload(v);}, 'apmode-offload-badge', bridgeBlocked)
 				])
 			]),
 
@@ -749,12 +776,15 @@ return view.extend({
 				_safeCall(callGetVlanOffload(), {enabled:0}),
 				_safeCall(callGetPppoeOffload(), {enabled:0}),
 				_safeCall(callGetFlowOffload(), {enabled:0}),
-				_safeCall(callGetApModeOffload(), {enabled:0})
+				_safeCall(callGetApModeOffload(), {enabled:0}),
+				_safeCall(callGetDeviceMode(), {bridge_offload_blocked:false})
 			]).then(L.bind(function(d) {
 				injectCSS();
 				var st=d[0]||{}, ppe=d[1]||{}, ti=d[2]||{}, fe=d[3]||{};
 				var vo=d[4]||{enabled:0}, ppo=d[5]||{enabled:0}, flo=d[6]||{enabled:0};
 				var apo=d[7]||{enabled:0};
+				var dm=d[8]||{};
+				var bridgeBlocked = isBridgeOffloadBlocked(dm);
 				var entries = Array.isArray(ppe.entries)?ppe.entries:[];
 				if (requestSequence > latestPpeRequest) {
 					latestPpeRequest = requestSequence;
@@ -787,17 +817,10 @@ return view.extend({
 					if (cc) { cc.innerHTML = ''; cc.appendChild(buildControlSettingsContent(st)); }
 				}
 
-				function _updateOffload(selectId, badgeId, on) {
-					on = isEnabled(on);
-					var sel = document.getElementById(selectId);
-					if(sel && !sel.matches(':focus')) sel.checked = on;
-					var b = document.getElementById(badgeId);
-					if(b) { b.className = 'offload-badge '+(on?'offload-on':'offload-off'); b.textContent = on?'\u5df2\u5f00\u542f':'\u5df2\u7981\u7528'; }
-				}
-				_updateOffload('vlan-offload-select', 'vlan-offload-badge', vo.enabled);
-				_updateOffload('pppoe-offload-select', 'pppoe-offload-badge', ppo.enabled);
-				_updateOffload('flow-offload-select', 'flow-offload-badge', flo.enabled);
-				_updateOffload('apmode-offload-select', 'apmode-offload-badge', apo.enabled);
+				updateOffloadControl('vlan-offload-select', 'vlan-offload-badge', vo.enabled, bridgeBlocked);
+				updateOffloadControl('pppoe-offload-select', 'pppoe-offload-badge', ppo.enabled, bridgeBlocked);
+				updateOffloadControl('flow-offload-select', 'flow-offload-badge', flo.enabled, false);
+				updateOffloadControl('apmode-offload-select', 'apmode-offload-badge', apo.enabled, bridgeBlocked);
 
 				var fcEl=document.getElementById('fe-container'); if(fcEl){fcEl.innerHTML='';fcEl.appendChild(renderFeDiagram(fe, ti, st));}
 
