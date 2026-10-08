@@ -77,8 +77,8 @@ Signed-off-by: Ryan Chen <rchen14b@gmail.com>
  	regmap_set_bits(pcs_pma, AIROHA_PCS_PMA_SW_RST_SET,
  			AIROHA_PCS_PMA_SW_HSG_TXPCS_RST_N);
 +
-+	if (priv->interface == PHY_INTERFACE_MODE_USXGMII ||
-+	    priv->interface == PHY_INTERFACE_MODE_10GBASER) {
++	if (priv->ports[index].interface == PHY_INTERFACE_MODE_USXGMII ||
++	    priv->ports[index].interface == PHY_INTERFACE_MODE_10GBASER) {
 +		if (priv->needs_full_init) {
 +			priv->needs_full_init = false;
 +			dev_dbg(priv->dev, "link_up: skipping global reset (bringup just ran)\n");
@@ -86,7 +86,7 @@ Signed-off-by: Ryan Chen <rchen14b@gmail.com>
 +		}
 +
 +		dev_dbg(priv->dev, "link_up: performing global digital reset\n");
-+		an7581_pcs_cdr_reset(priv, index, priv->interface, false);
++		an7581_pcs_cdr_reset(priv, index, priv->ports[index].interface, false);
 +
 +		/* Assert global reset (keep REF_RST_N high) */
 +		regmap_update_bits(pcs_pma, AIROHA_PCS_PMA_SW_RST_SET,
@@ -100,7 +100,7 @@ Signed-off-by: Ryan Chen <rchen14b@gmail.com>
 +
 +		usleep_range(5000, 7000);
 +
-+		an7581_pcs_cdr_reset(priv, index, priv->interface, false);
++		an7581_pcs_cdr_reset(priv, index, priv->ports[index].interface, false);
 +	}
  }
  
