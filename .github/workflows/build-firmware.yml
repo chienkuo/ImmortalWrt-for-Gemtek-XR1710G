@@ -126,7 +126,9 @@ jobs:
           bash scripts/check-firmware-artifacts.sh \
             --config .config \
             --directory bin/targets/airoha/an7581
-          kernel_config=$(find build_dir/target-aarch64_cortex-a53_musl/linux-airoha_an7581 -path '*/linux-*/.config' -print -quit)
+          kernel_version=$(sed -n 's/^LINUX_VERSION-6\.18 *= *\.//p' target/linux/generic/kernel-6.18 | tail -1)
+          kernel_config=$(find build_dir/target-aarch64_cortex-a53_musl/linux-airoha_an7581 -path "*/linux-6.18.${kernel_version}/.config" -print -quit)
+          echo "kernel config: $kernel_config"
           manifest=$(find bin/targets/airoha/an7581 -maxdepth 1 -type f -name '*manifest' -print -quit)
           test -n "$kernel_config"
           test -n "$manifest"

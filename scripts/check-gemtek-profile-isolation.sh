@@ -90,16 +90,9 @@ if grep -En "^CONFIG_(PACKAGE|DEFAULT)_${forbidden_packages}=y$" "$config_file";
 	failed=1
 fi
 
-# A HIDDEN package is generated as a prompt-less Kconfig symbol, so whatever
-# the seed config writes for it is discarded by `make defconfig`: the effective
-# value comes from MODULE_DEFAULT_* and the device profile, which is normally
-# `m` under TARGET_PER_DEVICE_ROOTFS (device packages are built as modules and
-# installed per device through DEVICE_PACKAGES). Accept both y and m here - the
-# manifest check further down is what proves the package really is in the image.
 for package in "${required_packages[@]}"; do
-	if ! grep -Fqx "CONFIG_PACKAGE_${package}=y" "$config_file" &&
-	   ! grep -Fqx "CONFIG_PACKAGE_${package}=m" "$config_file"; then
-		echo "$profile config does not enable required package: $package" >&2
+	if ! grep -Fqx "CONFIG_PACKAGE_${package}=y" "$config_file"; then
+		echo "$profile config is missing required package: $package" >&2
 		failed=1
 	fi
 done
@@ -115,10 +108,14 @@ if [[ -n "$kernel_config" ]]; then
 		failed=1
 	fi
 
+	# A required symbol only has to be enabled: the forbidden-symbol check
+	# above already accepts (y|m), and OpenWrt kernels legitimately build
+	# drivers as modules.
 	while IFS= read -r required; do
 		[[ -n "$required" ]] || continue
-		if ! grep -Eq "^${required}$" "$kernel_config"; then
-			echo "$profile kernel is missing required symbol: $required" >&2
+		name="${required%%=*}"
+		if ! grep -Eq "^${name}=(y|m)$" "$kernel_config"; then
+			echo "$profile kernel is missing required symbol: $required (found: $(grep -E "^${name}=" "$kernel_config" || echo 'not set'))" >&2
 			failed=1
 		fi
 	done < <(tr '|' '\n' <<<"$required_kernel")
