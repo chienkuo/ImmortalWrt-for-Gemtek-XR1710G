@@ -218,6 +218,13 @@ TARGET_DEVICES += nokia_xg-040g-tf-ubi
 define Device/gemtek_xr1710g-common
   DEVICE_VENDOR := Gemtek
   DEVICE_MODEL := XR1710G
+  # DEVICE_DTS and SOC have to be set before the KERNEL/IMAGE recipes below:
+  # those are immediate (:=) assignments, so they expand $$(firstword
+  # $$(DEVICE_DTS)) while this block is parsed - at that point Device/Default
+  # still provides its own SOC based formula, which would freeze an empty SOC
+  # into the DTB path (image--xr1710g.dtb) and break the FIT build.
+  DEVICE_DTS := $(1)
+  SOC := an7581
   DEVICE_PACKAGES := airoha-en7581-mt7996-npu-firmware airoha-an7581-mt7996-board \
 		    kmod-nf-conntrack-bridge kmod-nft-bridge \
 		    fitblk uboot-envtools \
@@ -235,25 +242,22 @@ define Device/gemtek_xr1710g-common
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
   IMAGES := sysupgrade.itb
   IMAGE/sysupgrade.itb := append-kernel | fit gzip $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb external-static-with-rootfs | append-metadata
-  SOC := an7581
 endef
 
 define Device/gemtek_xr1710g
-  $(call Device/gemtek_xr1710g-common)
+  $(call Device/gemtek_xr1710g-common,an7581-xr1710g)
   DEVICE_ALT0_VENDOR := Brightspeed
   DEVICE_ALT0_MODEL := XR1710G
   SUPPORTED_DEVICES := gemtek,xr1710g
-  DEVICE_DTS := an7581-xr1710g
 endef
 TARGET_DEVICES += gemtek_xr1710g
 
 define Device/gemtek_xr1710g-ubi
-  $(call Device/gemtek_xr1710g-common)
+  $(call Device/gemtek_xr1710g-common,an7581-gemtek-xr1710g-ubi)
   DEVICE_MODEL := XR1710G (OpenWrt U-Boot UBI layout)
   DEVICE_ALT0_VENDOR := Brightspeed
   DEVICE_ALT0_MODEL := XR1710G (OpenWrt U-Boot UBI layout)
   SUPPORTED_DEVICES := gemtek,xr1710g-ubi
-  DEVICE_DTS := an7581-gemtek-xr1710g-ubi
   DEVICE_COMPAT_VERSION := 2.0
   DEVICE_COMPAT_MESSAGE := Firmware requires the XR1710G OpenWrt U-Boot UBI layout \
        with bl2 at 0x00000000 and the UBI partition extending from \
@@ -264,6 +268,10 @@ TARGET_DEVICES += gemtek_xr1710g-ubi
 
 define Device/gemtek_xg2010g-common
   DEVICE_VENDOR := Gemtek
+  # See the note in Device/gemtek_xr1710g-common: the immediate KERNEL/IMAGE
+  # assignments below need DEVICE_DTS and SOC to be set beforehand.
+  DEVICE_DTS := $(1)
+  SOC := an7581
   DEVICE_COMPAT_VERSION := 2.0
   DEVICE_COMPAT_MESSAGE := Firmware requires the XG2010G OpenWrt U-Boot UBI layout \
        with bl2 at 0x00000000 and ubi starting at 0x00020000, containing \
@@ -289,23 +297,20 @@ define Device/gemtek_xg2010g-common
   IMAGE/sysupgrade.itb := append-kernel | \
 	fit gzip $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb external-static-with-rootfs | \
 	append-metadata | check-size
-  SOC := an7581
 endef
 
 define Device/gemtek_xg2010g-ubi
-  $(call Device/gemtek_xg2010g-common)
+  $(call Device/gemtek_xg2010g-common,an7581-gemtek-xg2010g-ubi)
   DEVICE_MODEL := XG2010G
   DEVICE_VARIANT := UBI
-  DEVICE_DTS := an7581-gemtek-xg2010g-ubi
   SUPPORTED_DEVICES := gemtek,xg2010g-ubi gemtek,xg2010g
 endef
 TARGET_DEVICES += gemtek_xg2010g-ubi
 
 define Device/gemtek_xg2010g-2g-ubi
-  $(call Device/gemtek_xg2010g-common)
+  $(call Device/gemtek_xg2010g-common,an7581-gemtek-xg2010g-2g-ubi)
   DEVICE_MODEL := XG2010G (2 GiB)
   DEVICE_VARIANT := UBI
-  DEVICE_DTS := an7581-gemtek-xg2010g-2g-ubi
   SUPPORTED_DEVICES := gemtek,xg2010g-2g-ubi gemtek,xg2010g-2g
 endef
 TARGET_DEVICES += gemtek_xg2010g-2g-ubi
