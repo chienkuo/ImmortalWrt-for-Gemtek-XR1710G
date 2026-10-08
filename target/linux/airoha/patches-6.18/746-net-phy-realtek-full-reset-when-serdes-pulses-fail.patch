@@ -26,7 +26,7 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  };
 --- a/drivers/net/phy/realtek/realtek_main.c
 +++ b/drivers/net/phy/realtek/realtek_main.c
-@@ -2653,6 +2653,54 @@
+@@ -2653,6 +2653,50 @@
  	return genphy_c45_check_and_restart_aneg(phydev, changed);
  }
  
@@ -39,8 +39,8 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
 +	phydev_info(phydev,
 +		    "RTK SerDes pulses failed to recover carrier, full PHY reset\n");
 +
-+	/* Vendor 0x145 reset, then reload the patch table and SDS
-+	 * configuration - the same sequence config_init() runs. A stuck
++	/* Vendor 0x145 reset, then reload the patch table and SerDes
++	 * polarity - the same sequence config_init() runs. A stuck
 +	 * host-side USXGMII AN engine after cable hotplug needs this full
 +	 * reset; the flow_s pulses alone cannot restart it.
 +	 */
@@ -62,10 +62,6 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
 +	if (ret)
 +		return ret;
 +
-+	ret = rtl826x_config_sds_mode(phydev);
-+	if (ret)
-+		return ret;
-+
 +	ret = rtl826x_config_serdes_polarity(phydev);
 +	if (ret)
 +		return ret;
@@ -81,7 +77,7 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  static int rtl826x_rtk_serdes_pulse(struct phy_device *phydev)
  {
  	struct rtl826x_priv *priv = phydev->priv;
-@@ -2793,6 +2841,22 @@
+@@ -2793,6 +2837,22 @@
  			return 0;
  
  		priv->rtk_serdes_carrier_polls = 0;
