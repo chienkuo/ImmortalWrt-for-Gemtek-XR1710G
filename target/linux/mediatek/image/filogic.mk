@@ -159,7 +159,7 @@ define Device/abt_asr3000
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -247,7 +247,7 @@ define Device/acer_predator-w6x-ubootmod
   PAGESIZE := 2048
   KERNEL_IN_UBI := 1
   UBOOTENV_IN_UBI := 1
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -429,7 +429,7 @@ define Device/arcadyan_mozart
   DEVICE_DTS_LOADADDR := 0x45f00000
   DEVICE_PACKAGES := kmod-hwmon-pwmfan e2fsprogs f2fsck mkf2fs kmod-mt7996-firmware
   KERNEL_LOADADDR := 0x46000000
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   KERNEL_INITRAMFS_SUFFIX := .itb
@@ -493,15 +493,43 @@ endif
 endef
 TARGET_DEVICES += asus_rt-ax57m
 
-define Device/asus_rt-ax59u
+define Device/asus_rt-ax59u-common
   DEVICE_VENDOR := ASUS
   DEVICE_MODEL := RT-AX59U
-  DEVICE_DTS := mt7986a-asus-rt-ax59u
   DEVICE_DTS_DIR := ../dts
   DEVICE_PACKAGES := kmod-usb3 kmod-mt7915e kmod-mt7986-firmware mt7986-wo-firmware automount
+endef
+
+define Device/asus_rt-ax59u
+  DEVICE_DTS := mt7986a-asus-rt-ax59u
+  $(call Device/asus_rt-ax59u-common)
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
 endef
 TARGET_DEVICES += asus_rt-ax59u
+
+define Device/asus_rt-ax59u-ubi
+  DEVICE_VARIANT := (UBI)
+  DEVICE_DTS := mt7986a-asus-rt-ax59u-ubi
+  $(call Device/asus_rt-ax59u-common)
+  UBINIZE_OPTS := -E 5
+  BLOCKSIZE := 128k
+  PAGESIZE := 2048
+  KERNEL_IN_UBI := 1
+  UBOOTENV_IN_UBI := 1
+  IMAGES := sysupgrade.itb
+  KERNEL_INITRAMFS_SUFFIX := -recovery.itb
+  KERNEL := kernel-bin | lzma
+  KERNEL_INITRAMFS := kernel-bin | lzma | \
+	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | \
+	pad-to 64k
+  IMAGE/sysupgrade.itb := append-kernel | \
+	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb external-with-rootfs | \
+	append-metadata
+  ARTIFACTS := bl31-uboot.fip preloader.bin
+  ARTIFACT/bl31-uboot.fip := mt7986-bl31-uboot asus_rt-ax59u
+  ARTIFACT/preloader.bin := mt7986-bl2 spim-nand-ubi-1m-ddr4
+endef
+TARGET_DEVICES += asus_rt-ax59u-ubi
 
 define Device/asus_tuf-ax4200
   DEVICE_VENDOR := ASUS
@@ -567,7 +595,7 @@ define Device/asus_zenwifi-bt8
   DEVICE_DTS := mt7988d-asus-zenwifi-bt8
   DEVICE_DTS_DIR := ../dts
   DEVICE_PACKAGES := kmod-usb3 mt7988-2p5g-phy-firmware kmod-mt7996-firmware mt7988-wo-firmware automount
-  KERNEL := kernel-bin | gzip | \
+  KERNEL := kernel-bin | libdeflate-gzip | \
 	fit gzip $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
@@ -594,7 +622,7 @@ define Device/asus_zenwifi-bt8-ubootmod
   ARTIFACTS := preloader.bin bl31-uboot.fip
   ARTIFACT/preloader.bin := mt7988-bl2 spim-nand-ubi-ddr4
   ARTIFACT/bl31-uboot.fip := mt7988-bl31-uboot asus_zenwifi-bt8
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
@@ -649,11 +677,11 @@ define Device/bananapi_bpi-r3
 				$(if $(CONFIG_TARGET_ROOTFS_SQUASHFS),\
 				   pad-to 64M | append-image squashfs-sysupgrade.itb | check-size |\
 				) \
-				  gzip
+				  libdeflate-gzip
 ifeq ($(DUMP),)
   IMAGE_SIZE := $$(shell expr 64 + $$(CONFIG_TARGET_ROOTFS_PARTSIZE))m
 endif
-  KERNEL			:= kernel-bin | gzip
+  KERNEL			:= kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | fit gzip $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb external-static-with-rootfs | pad-rootfs | append-metadata
@@ -674,7 +702,7 @@ define Device/bananapi_bpi-r3-mini
 		     kmod-phy-airoha-en8811h kmod-usb3 e2fsprogs f2fsck mkf2fs mt7986-wo-firmware \
 		     automount
   KERNEL_LOADADDR := 0x44000000
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
     fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
@@ -750,7 +778,7 @@ define Device/bananapi_bpi-r4-common
 				$(if $(CONFIG_TARGET_ROOTFS_SQUASHFS),\
 				   pad-to 64M | append-image squashfs-sysupgrade.itb | check-size |\
 				) \
-				  gzip
+				  libdeflate-gzip
   ARTIFACT/sdcard_8g.img.gz	:= mt798x-gpt sdmmc |\
 				   pad-to 17k | mt7988-bl2 sdmmc-comb-4bg |\
 				   pad-to 6656k | mt7988-bl31-uboot $$(DEVICE_NAME)-sdmmc |\
@@ -765,9 +793,9 @@ define Device/bananapi_bpi-r4-common
 				$(if $(CONFIG_TARGET_ROOTFS_SQUASHFS),\
 				   pad-to 64M | append-image squashfs-sysupgrade.itb | check-size |\
 				) \
-				  gzip
+				  libdeflate-gzip
   IMAGE_SIZE := $$(shell expr 64 + $$(CONFIG_TARGET_ROOTFS_PARTSIZE))m
-  KERNEL			:= kernel-bin | gzip
+  KERNEL			:= kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | fit gzip $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb external-with-rootfs | pad-rootfs | append-metadata
@@ -802,7 +830,7 @@ define Device/bananapi_bpi-r4-pro-common
   DEVICE_PACKAGES := kmod-dsa-mxl862xx kmod-hwmon-pwmfan kmod-i2c-mux-pca954x \
 		     kmod-eeprom-at24 kmod-mt7996-firmware kmod-mt7996-233-firmware \
 		     kmod-rtc-pcf8563 kmod-sfp kmod-usb3 e2fsprogs f2fsck mkf2fs \
-		     mt7988-wo-firmware kmod-gpio-pca953x kmod-nvme
+		     mt7988-wo-firmware kmod-gpio-pca953x kmod-nvme automount
   IMAGES := sysupgrade.itb
   KERNEL_LOADADDR := 0x46000000
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
@@ -836,6 +864,17 @@ define Device/bananapi_bpi-r4-pro-common
   IMAGE/sysupgrade.itb := append-kernel | fit gzip $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb external-with-rootfs | pad-rootfs | append-metadata
 endef
 
+define Device/bananapi_bpi-r4-pro-4e
+  DEVICE_MODEL := BPi-R4 Pro 4E
+  DEVICE_DTS := mt7988a-bananapi-bpi-r4-pro-4e
+  DEVICE_DTS_CONFIG := config-mt7988a-bananapi-bpi-r4-pro-4e
+  DEVICE_BL2 := comb
+  $(call Device/bananapi_bpi-r4-pro-common)
+  DEVICE_PACKAGES += mt7988-2p5g-phy-firmware
+  DEVICE_DTS_OVERLAY += mt7988a-bananapi-bpi-r4-pro-4e-wan-phy mt7988a-bananapi-bpi-r4-pro-4e-wan-sfp
+endef
+TARGET_DEVICES += bananapi_bpi-r4-pro-4e
+
 define Device/bananapi_bpi-r4-pro-8x
   DEVICE_MODEL := BPi-R4 Pro 8X
   DEVICE_DTS := mt7988a-bananapi-bpi-r4-pro-8x
@@ -866,7 +905,7 @@ define Device/bananapi_bpi-r4-lite
   KERNEL_IN_UBI := 1
   UBOOTENV_IN_UBI := 1
   KERNEL_LOADADDR := 0x40000000
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGES := sysupgrade.itb
@@ -901,7 +940,7 @@ define Device/bananapi_bpi-r4-lite
 				$(if $(CONFIG_TARGET_ROOTFS_SQUASHFS),\
 				   pad-to 64M | append-image squashfs-sysupgrade.itb | check-size |\
 				) \
-				  gzip
+				  libdeflate-gzip
 ifeq ($(DUMP),)
   IMAGE_SIZE := $$(shell expr 64 + $$(CONFIG_TARGET_ROOTFS_PARTSIZE))m
 endif
@@ -922,7 +961,7 @@ define Device/bazis_ax3000wm
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -991,13 +1030,13 @@ define Device/cetron_ct3003-ubootmod
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
         fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
         fit gzip $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb external-static-with-rootfs | append-metadata
   ARTIFACTS := preloader.bin bl31-uboot.fip
-  ARTIFACT/preloader.bin := mt7981-bl2 spim-nand-ddr3
+  ARTIFACT/preloader.bin := mt7981-bl2 spim-nand-ddr3-1866
   ARTIFACT/bl31-uboot.fip := mt7981-bl31-uboot cetron_ct3003
   DEVICE_COMPAT_VERSION := 1.2
   DEVICE_COMPAT_MESSAGE := Flash layout changes require bootloader update
@@ -1050,7 +1089,7 @@ define Device/cmcc_a10-ubootmod
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -1064,14 +1103,14 @@ endef
 TARGET_DEVICES += cmcc_a10-ubootmod
 
 define Device/cmcc_rax3000m_common
-  DEVICE_DTS_OVERLAY := mt7981b-cmcc-rax3000m-emmc mt7981b-cmcc-rax3000m-nand
+  DEVICE_DTS_OVERLAY := mt7981b-cmcc-rax3000m-emmc mt7981b-cmcc-rax3000m-nand mt7981b-cmcc-rax3000m-ubi
   DEVICE_DTS_DIR := ../dts
   DEVICE_DTC_FLAGS := --pad 4096
   DEVICE_DTS_LOADADDR := 0x43f00000
   DEVICE_PACKAGES := kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware kmod-usb3 \
 	automount f2fsck mkf2fs
   KERNEL_LOADADDR := 0x44000000
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
@@ -1092,11 +1131,14 @@ define Device/cmcc_rax3000m
   DEVICE_DTS := mt7981b-cmcc-rax3000m
   $(call Device/cmcc_rax3000m_common)
   ARTIFACTS += emmc-preloader.bin emmc-bl31-uboot.fip \
-	nand-preloader.bin nand-bl31-uboot.fip
+	nand-preloader.bin nand-bl31-uboot.fip \
+	ubi-preloader.bin ubi-bl31-uboot.fip
   ARTIFACT/emmc-preloader.bin := mt7981-bl2 emmc-ddr4
   ARTIFACT/emmc-bl31-uboot.fip := mt7981-bl31-uboot cmcc_rax3000m-emmc
   ARTIFACT/nand-preloader.bin := mt7981-bl2 spim-nand-ddr4
   ARTIFACT/nand-bl31-uboot.fip := mt7981-bl31-uboot cmcc_rax3000m-nand
+  ARTIFACT/ubi-preloader.bin  := mt7981-bl2 spim-nand-ubi-ddr4
+  ARTIFACT/ubi-bl31-uboot.fip := mt7981-bl31-uboot cmcc_rax3000m-ubi
 endef
 TARGET_DEVICES += cmcc_rax3000m
 
@@ -1109,7 +1151,9 @@ define Device/cmcc_rax3000me
   ARTIFACTS += emmc-ddr3-preloader.bin emmc-ddr3-bl31-uboot.fip \
 	emmc-ddr4-preloader.bin emmc-ddr4-bl31-uboot.fip \
 	nand-ddr3-preloader.bin nand-ddr3-bl31-uboot.fip \
-	nand-ddr4-preloader.bin nand-ddr4-bl31-uboot.fip
+	nand-ddr4-preloader.bin nand-ddr4-bl31-uboot.fip \
+	ubi-ddr3-preloader.bin ubi-ddr3-bl31-uboot.fip \
+	ubi-ddr4-preloader.bin ubi-ddr4-bl31-uboot.fip
   ARTIFACT/emmc-ddr3-preloader.bin := mt7981-bl2 emmc-ddr3-1866
   ARTIFACT/emmc-ddr3-bl31-uboot.fip := mt7981-bl31-uboot cmcc_rax3000me-emmc-ddr3
   ARTIFACT/emmc-ddr4-preloader.bin := mt7981-bl2 emmc-ddr4
@@ -1118,6 +1162,10 @@ define Device/cmcc_rax3000me
   ARTIFACT/nand-ddr3-bl31-uboot.fip := mt7981-bl31-uboot cmcc_rax3000me-nand-ddr3
   ARTIFACT/nand-ddr4-preloader.bin := mt7981-bl2 spim-nand-ddr4
   ARTIFACT/nand-ddr4-bl31-uboot.fip := mt7981-bl31-uboot cmcc_rax3000me-nand-ddr4
+  ARTIFACT/ubi-ddr3-preloader.bin  := mt7981-bl2 spim-nand-ubi-ddr3-1866
+  ARTIFACT/ubi-ddr3-bl31-uboot.fip := mt7981-bl31-uboot cmcc_rax3000me-ubi-ddr3
+  ARTIFACT/ubi-ddr4-preloader.bin  := mt7981-bl2 spim-nand-ubi-ddr4
+  ARTIFACT/ubi-ddr4-bl31-uboot.fip := mt7981-bl31-uboot cmcc_rax3000me-ubi-ddr4
 endef
 TARGET_DEVICES += cmcc_rax3000me
 
@@ -1218,7 +1266,7 @@ define Device/comfast_cf-wr632ax-ubootmod-common
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -1313,7 +1361,7 @@ define Device/creatlentem_clt-r30b1-ubi
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -1410,7 +1458,7 @@ define Device/cudy_m3000-v1-ubootmod
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -1455,7 +1503,7 @@ define Device/cudy_m3000-v2-yt8821-ubootmod
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -1531,7 +1579,7 @@ define Device/cudy_tr3000-v1-ubootmod
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -1590,7 +1638,7 @@ define Device/cudy_wr3000e-v1-ubootmod
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -1632,7 +1680,7 @@ define Device/cudy_wr3000s-v1-ubootmod
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -1674,7 +1722,7 @@ define Device/cudy_wr3000h-v1-ubootmod
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -1716,7 +1764,7 @@ define Device/cudy_wr3000p-v1-ubootmod
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -1775,7 +1823,7 @@ define Device/cudy_wbr3000uax-v1-ubootmod
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -1785,6 +1833,27 @@ define Device/cudy_wbr3000uax-v1-ubootmod
   ARTIFACT/bl31-uboot.fip := mt7981-bl31-uboot cudy_wbr3000uax-v1
 endef
 TARGET_DEVICES += cudy_wbr3000uax-v1-ubootmod
+
+define Device/cudy_p2-v1
+  DEVICE_VENDOR := Cudy
+  DEVICE_MODEL := P2
+  DEVICE_VARIANT := v1
+  DEVICE_DTS := mt7981b-cudy-p2-v1
+  DEVICE_DTS_DIR := ../dts
+  SUPPORTED_DEVICES += R91
+  UBINIZE_OPTS := -E 5
+  DEVICE_DTS_LOADADDR := 0x44000000
+  BLOCKSIZE := 128k
+  PAGESIZE := 2048
+  IMAGE_SIZE := 65536k
+  KERNEL_IN_UBI := 1
+  KERNEL_INITRAMFS := kernel-bin | lzma | \
+	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
+  IMAGES := sysupgrade.bin
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+  DEVICE_PACKAGES := kmod-ledtrig-network kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware kmod-usb3 kmod-usb-serial-option kmod-usb-net-cdc-ether
+endef
+TARGET_DEVICES += cudy_p2-v1
 
 define Device/dlink_aquila-pro-ai-e30-a1
   DEVICE_VENDOR := D-Link
@@ -1924,8 +1993,8 @@ define Device/gatonetworks_gdsp
   ARTIFACT/preloader.bin := mt7981-bl2 nor-ddr3
   ARTIFACT/bl31-uboot.fip := mt7981-bl31-uboot gatonetworks_gdsp
   ARTIFACT/sdcard.img.gz := simplefit |\
-  append-image squashfs-sysupgrade.itb | check-size | gzip
-  KERNEL := kernel-bin | gzip
+  append-image squashfs-sysupgrade.itb | check-size | libdeflate-gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | fit gzip $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb external-static-with-rootfs | pad-rootfs | append-metadata
@@ -2105,7 +2174,7 @@ define Device/h3c_magic-nx30-pro
   IMAGE_SIZE := 65536k
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -2204,7 +2273,7 @@ define Device/imou_hx21
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -2324,7 +2393,7 @@ define Device/jcg_q30-pro
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -2346,7 +2415,7 @@ define Device/jdcloud_re-cp-03
   DEVICE_PACKAGES := kmod-mt7915e kmod-mt7986-firmware mt7986-wo-firmware \
 	e2fsprogs f2fsck mkf2fs
   KERNEL_LOADADDR := 0x44000000
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
@@ -2368,7 +2437,7 @@ define Device/jiorouter_ax6000-jidu6101
   DEVICE_VARIANT := JIDU6101
   DEVICE_DTS := mt7986a-jiorouter-ax6000-jidu6101
   DEVICE_DTS_DIR := ../dts
-  DEVICE_PACKAGES := kmod-usb3 kmod-mt7915e kmod-mt7916-firmware kmod-mt7986-firmware mt7986-wo-firmware automount
+  DEVICE_PACKAGES := kmod-usb3 kmod-mt7915e kmod-mt7986-firmware mt7986-wo-firmware automount
   UBINIZE_OPTS := -E 5
   UBOOTENV_IN_UBI := 1
   BLOCKSIZE := 128k
@@ -2376,6 +2445,33 @@ define Device/jiorouter_ax6000-jidu6101
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
 endef
 TARGET_DEVICES += jiorouter_ax6000-jidu6101
+
+define Device/jiorouter_ax6000-jidu6j01
+  DEVICE_VENDOR := JioRouter
+  DEVICE_MODEL := AX6000
+  DEVICE_VARIANT := JIDU6J01
+  DEVICE_ALT0_VENDOR := JioRouter
+  DEVICE_ALT0_MODEL := AX6000
+  DEVICE_ALT0_VARIANT := JIDU6201
+  DEVICE_ALT1_VENDOR := JioRouter
+  DEVICE_ALT1_MODEL := AX6000
+  DEVICE_ALT1_VARIANT := JIDU6401
+  DEVICE_ALT2_VENDOR := JioRouter
+  DEVICE_ALT2_MODEL := AX6000
+  DEVICE_ALT2_VARIANT := JIDU6601
+  DEVICE_ALT3_VENDOR := JioRouter
+  DEVICE_ALT3_MODEL := AX6000
+  DEVICE_ALT3_VARIANT := JIDU6701
+  DEVICE_DTS := mt7986a-jiorouter-ax6000-jidu6j01
+  DEVICE_DTS_DIR := ../dts
+  DEVICE_PACKAGES := kmod-usb3 kmod-mt7915e kmod-mt7986-firmware mt7986-wo-firmware
+  UBINIZE_OPTS := -E 5
+  UBOOTENV_IN_UBI := 1
+  BLOCKSIZE := 128k
+  PAGESIZE := 2048
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+endef
+TARGET_DEVICES += jiorouter_ax6000-jidu6j01
 
 define Device/kebidumei_ax3000-u22
   DEVICE_VENDOR := Kebidumei
@@ -2416,6 +2512,93 @@ define Device/keenetic_kap-630
 endef
 TARGET_DEVICES += keenetic_kap-630
 
+# Chainloader in front of the kernel FIT, at the load address the stock
+# kernel FIT uses. The ITS is written out here because the stock loader
+# only ran a payload shaped like the vendor image, kernel@1 / fdt@1 /
+# config@1 with the "Linux 4.9" description included, and mkits.sh
+# hardcodes its description strings. The stock loader boots only when a
+# squashfs follows the FIT it loads, so an empty one sits right behind the
+# chainloader FIT inside the pad, not at the end of the kernel partition.
+kn1012_uboot_pad := 1024k
+
+define Build/kn1012-prepend-uboot
+	$(STAGING_DIR_HOST)/bin/lzma e \
+		$(STAGING_DIR_IMAGE)/mt7981_keenetic_kn-1012-u-boot.bin $@.uboot.lzma
+	( \
+		printf '/dts-v1/;\n\n/ {\n'; \
+		printf '\tdescription = "FIT";\n'; \
+		printf '\t#address-cells = <1>;\n\n\timages {\n'; \
+		printf '\t\tkernel@1 {\n'; \
+		printf '\t\t\tdescription = "Linux 4.9";\n'; \
+		printf '\t\t\tdata = /incbin/("$@.uboot.lzma");\n'; \
+		printf '\t\t\ttype = "kernel";\n\t\t\tarch = "arm64";\n'; \
+		printf '\t\t\tos = "linux";\n\t\t\tcompression = "lzma";\n'; \
+		printf '\t\t\tload = <0x48080000>;\n'; \
+		printf '\t\t\tentry = <0x48080000>;\n'; \
+		printf '\t\t\thash@1 { algo = "crc32"; };\n'; \
+		printf '\t\t\thash@2 { algo = "sha1"; };\n\t\t};\n'; \
+		printf '\t\tfdt@1 {\n'; \
+		printf '\t\t\tdescription = "$(DEVICE_MODEL) DTB";\n'; \
+		printf '\t\t\tdata = /incbin/("$(KDIR)/image-$(word 1,$(DEVICE_DTS)).dtb");\n'; \
+		printf '\t\t\ttype = "flat_dt";\n\t\t\tarch = "arm64";\n'; \
+		printf '\t\t\tcompression = "none";\n'; \
+		printf '\t\t\thash@1 { algo = "crc32"; };\n'; \
+		printf '\t\t\thash@2 { algo = "sha1"; };\n\t\t};\n'; \
+		printf '\t};\n\n\tconfigurations {\n'; \
+		printf '\t\tdefault = "config@1";\n'; \
+		printf '\t\tconfig@1 {\n'; \
+		printf '\t\t\tdescription = "NDMS";\n'; \
+		printf '\t\t\tkernel = "kernel@1";\n'; \
+		printf '\t\t\tfdt = "fdt@1";\n\t\t};\n'; \
+		printf '\t};\n};\n'; \
+	) > $@.uboot.its
+	PATH=$(LINUX_DIR)/scripts/dtc:$(PATH) mkimage -f $@.uboot.its $@.uboot.itb
+	mv $@ $@.payload
+	mv $@.uboot.itb $@
+	$(call Build/append-squashfs4-fakeroot)
+	test $$(wc -c < $@) -le $$(( $(call exp_units,$(kn1012_uboot_pad)) )) || { \
+		echo "chainloader does not fit in the $(kn1012_uboot_pad) it is padded to" >&2; \
+		false; \
+	}
+	$(call Build/pad-to,$(kn1012_uboot_pad))
+	cat $@ $@.payload > $@.new
+	@mv $@.new $@
+	@rm -rf $@.payload $@.uboot.lzma $@.uboot.its $@.fakefs $@.fakesquashfs
+endef
+
+define Device/keenetic_kn-1012-common
+  DEVICE_DTS_DIR := ../dts
+  DEVICE_PACKAGES := kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware \
+		kmod-usb3 kmod-phy-airoha-en8811h kmod-sfp automount
+  UBINIZE_OPTS := -E 5
+  BLOCKSIZE := 128k
+  PAGESIZE := 2048
+  # 1 MiB chainloader plus the 7 MiB kernel_size its environment reads
+  KERNEL_SIZE := 8192k
+  # first firmware slot, where the stock recovery writes the factory image
+  IMAGE_SIZE := 59392k
+  DEVICE_DTS_OVERLAY := mt7981b-keenetic-kn-1012-copper mt7981b-keenetic-kn-1012-sfp
+  DEVICE_DTC_FLAGS := --pad 4096
+  DEVICE_DTS_LOADADDR := 0x43f00000
+  KERNEL := kernel-bin | lzma | \
+	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb | kn1012-prepend-uboot
+  KERNEL_INITRAMFS := kernel-bin | lzma | \
+	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+  IMAGES += factory.bin
+  IMAGE/factory.bin := append-kernel | pad-to $$(KERNEL_SIZE) | \
+	append-ubi | check-size | zyimage -d $$(ZYIMAGE_ID) -v "$$(DEVICE_MODEL)"
+endef
+
+define Device/keenetic_kn-1012
+  DEVICE_VENDOR := Keenetic
+  DEVICE_MODEL := KN-1012
+  DEVICE_DTS := mt7981b-keenetic-kn-1012
+  ZYIMAGE_ID := 0x801012
+  $(call Device/keenetic_kn-1012-common)
+endef
+TARGET_DEVICES += keenetic_kn-1012
+
 define Device/keenetic_kn-1812-common
   DEVICE_DTS_DIR := ../dts
   DEVICE_PACKAGES := kmod-mt7992-firmware kmod-usb3 automount \
@@ -2442,6 +2625,32 @@ define Device/keenetic_kn-1812
   $(call Device/keenetic_kn-1812-common)
 endef
 TARGET_DEVICES += keenetic_kn-1812
+
+define Device/keenetic_kn-3411-common
+  DEVICE_DTS_DIR := ../dts
+  DEVICE_PACKAGES := kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware
+  UBINIZE_OPTS := -E 5
+  BLOCKSIZE := 128k
+  PAGESIZE := 2048
+  KERNEL_SIZE := 6144k
+  IMAGE_SIZE := 108544k
+  KERNEL := kernel-bin | lzma | fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb | \
+	append-squashfs4-fakeroot
+  IMAGES += factory.bin
+  IMAGE/factory.bin := append-kernel | pad-to $$(KERNEL_SIZE) | \
+	append-ubi | check-size | zyimage -d $$(ZYIMAGE_ID) -v "$$(DEVICE_VARIANT)"
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+endef
+
+define Device/keenetic_kn-3411
+  DEVICE_VENDOR := Keenetic
+  DEVICE_MODEL := Buddy 6
+  DEVICE_VARIANT := KN-3411
+  DEVICE_DTS := mt7981b-keenetic-kn-3411
+  ZYIMAGE_ID := 0x803411
+  $(call Device/keenetic_kn-3411-common)
+endef
+TARGET_DEVICES += keenetic_kn-3411
 
 define Device/keenetic_kn-3711
   DEVICE_VENDOR := Keenetic
@@ -2502,6 +2711,16 @@ define Device/keenetic_kn-3911
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
 endef
 TARGET_DEVICES += keenetic_kn-3911
+
+define Device/keenetic_kn-4410
+  DEVICE_VENDOR := Keenetic
+  DEVICE_MODEL := Buddy 6 SE
+  DEVICE_VARIANT := KN-4410
+  DEVICE_DTS := mt7981b-keenetic-kn-4410
+  ZYIMAGE_ID := 0x804410
+  $(call Device/keenetic_kn-3411-common)
+endef
+TARGET_DEVICES += keenetic_kn-4410
 
 define Device/konka_komi-a31
   DEVICE_VENDOR := Konka
@@ -2572,7 +2791,7 @@ define Device/livinet_zr-3020-ubootmod
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -2625,7 +2844,7 @@ define Device/mediatek_mt7981-rfb
   DEVICE_DTS_LOADADDR := 0x43f00000
   DEVICE_PACKAGES := kmod-mt7915e kmod-mt7981-firmware kmod-usb3 e2fsprogs f2fsck mkf2fs mt7981-wo-firmware
   KERNEL_LOADADDR := 0x44000000
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   KERNEL_INITRAMFS_SUFFIX := .itb
@@ -2663,7 +2882,7 @@ define Device/mediatek_mt7981-rfb
 				$(if $(CONFIG_TARGET_ROOTFS_SQUASHFS),\
 				   pad-to 64M | append-image squashfs-sysupgrade.itb | check-size |\
 				) \
-				  gzip
+				  libdeflate-gzip
 endef
 TARGET_DEVICES += mediatek_mt7981-rfb
 
@@ -2726,7 +2945,7 @@ define Device/mediatek_mt7987a-rfb
   DEVICE_DTS_LOADADDR := 0x4ff00000
   DEVICE_PACKAGES := mt7987-2p5g-phy-firmware kmod-sfp
   KERNEL_LOADADDR := 0x40000000
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGES := sysupgrade.itb
@@ -2750,7 +2969,7 @@ define Device/mediatek_mt7987a-rfb
 				$(if $(CONFIG_TARGET_ROOTFS_SQUASHFS),\
 				  pad-to 64M | append-image squashfs-sysupgrade.itb | check-size |\
 				) \
-				  gzip
+				  libdeflate-gzip
 endef
 TARGET_DEVICES += mediatek_mt7987a-rfb
 
@@ -2777,7 +2996,7 @@ define Device/mediatek_mt7988a-rfb
   DEVICE_DTS_LOADADDR := 0x45f00000
   DEVICE_PACKAGES := mt7988-2p5g-phy-firmware kmod-sfp kmod-phy-aquantia
   KERNEL_LOADADDR := 0x46000000
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   KERNEL_INITRAMFS_SUFFIX := .itb
@@ -2813,7 +3032,7 @@ define Device/mediatek_mt7988a-rfb
 				$(if $(CONFIG_TARGET_ROOTFS_SQUASHFS),\
 				   pad-to 64M | append-image squashfs-sysupgrade.itb | check-size |\
 				) \
-				  gzip
+				  libdeflate-gzip
 endef
 TARGET_DEVICES += mediatek_mt7988a-rfb
 
@@ -2902,7 +3121,7 @@ define Device/mercusys_mr90x-v1-ubi
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | \
 	pad-to 64k
@@ -2927,7 +3146,7 @@ define Device/netcore_n60
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -2954,7 +3173,7 @@ define Device/netcore_n60-pro
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -2975,6 +3194,15 @@ define Device/netcraze_nap-630
 endef
 TARGET_DEVICES += netcraze_nap-630
 
+define Device/netcraze_nc-1012
+  DEVICE_VENDOR := Netcraze
+  DEVICE_MODEL := NC-1012
+  DEVICE_DTS := mt7981b-netcraze-nc-1012
+  ZYIMAGE_ID := 0xC01012
+  $(call Device/keenetic_kn-1012-common)
+endef
+TARGET_DEVICES += netcraze_nc-1012
+
 define Device/netcraze_nc-1812
   DEVICE_VENDOR := Netcraze
   DEVICE_MODEL := NC-1812
@@ -2983,6 +3211,26 @@ define Device/netcraze_nc-1812
   $(call Device/keenetic_kn-1812-common)
 endef
 TARGET_DEVICES += netcraze_nc-1812
+
+define Device/netcraze_nc-3411
+  DEVICE_VENDOR := Netcraze
+  DEVICE_MODEL := Buddy 6
+  DEVICE_VARIANT := NC-3411
+  DEVICE_DTS := mt7981b-netcraze-nc-3411
+  ZYIMAGE_ID := 0xC03411
+  $(call Device/keenetic_kn-3411-common)
+endef
+TARGET_DEVICES += netcraze_nc-3411
+
+define Device/netcraze_nc-4410
+  DEVICE_VENDOR := Netcraze
+  DEVICE_MODEL := Buddy 6 SE
+  DEVICE_VARIANT := NC-4410
+  DEVICE_DTS := mt7981b-netcraze-nc-4410
+  ZYIMAGE_ID := 0xC04410
+  $(call Device/keenetic_kn-3411-common)
+endef
+TARGET_DEVICES += netcraze_nc-4410
 
 define Device/netgear_eax17
   DEVICE_VENDOR := NETGEAR
@@ -3056,7 +3304,7 @@ define Device/netis_eap930-v1
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -3115,7 +3363,7 @@ define Device/netis_nx30v2
   DEVICE_DTS_LOADADDR := 0x43f00000
   DEVICE_PACKAGES := kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware
   KERNEL_LOADADDR := 0x44000000
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   KERNEL_INITRAMFS_SUFFIX := .itb
   KERNEL_IN_UBI := 1
@@ -3141,7 +3389,7 @@ define Device/netis_nx31
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -3166,7 +3414,7 @@ define Device/netis_nx32u
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -3193,7 +3441,7 @@ define Device/nokia_ea0326gmp
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -3259,7 +3507,7 @@ define Device/openwrt_one
   DEVICE_PACKAGES := kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware \
 	kmod-rtc-pcf8563 kmod-usb3 kmod-phy-airoha-en8811h automount
   KERNEL_LOADADDR := 0x44000000
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   KERNEL_INITRAMFS_SUFFIX := .itb
@@ -3306,7 +3554,7 @@ define Device/qihoo_360t7-common
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | \
 	pad-to 64k
@@ -3363,7 +3611,7 @@ define Device/routerich_ax3000-ubootmod
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -3401,7 +3649,7 @@ define Device/routerich_be7200
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
   KERNEL_LOADADDR := 0x40000000
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | \
 	pad-to 64k
@@ -3450,7 +3698,7 @@ define Device/snr_snr-cpe-ax2
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -3722,6 +3970,9 @@ define Device/tplink_tl-7dr7230-v1
   ARTIFACT/preloader.bin := mt7988-bl2 spim-nand-ddr4
   ARTIFACT/bl31-uboot.fip := mt7988-bl31-uboot tplink_tl-7dr7230-v1
   $(call Device/tplink_tl-7dr-common)
+  IMAGES += factory.bin
+  IMAGE/factory.bin := append-squashfs4-fakeroot | sysupgrade-tar \
+	kernel=$$$$(BIN_DIR)/$$(KERNEL_INITRAMFS_IMAGE) rootfs=$$$$@ | append-metadata
 endef
 TARGET_DEVICES += tplink_tl-7dr7230-v1
 
@@ -3784,7 +4035,7 @@ define Device/tplink_tl-xdr-common
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -3966,7 +4217,7 @@ define Device/wavlink_wl-wnt100x3-ubootmod
   PAGESIZE := 2048
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -4029,7 +4280,7 @@ define Device/xiaomi_mi-router-ax3000t-ubootmod
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -4080,7 +4331,7 @@ define Device/xiaomi_mi-router-wr30u-ubootmod
   UBOOTENV_IN_UBI := 1
   IMAGES := sysupgrade.itb
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -4131,7 +4382,7 @@ define Device/xiaomi_redmi-router-ax6000-ubootmod
   PAGESIZE := 2048
   KERNEL_IN_UBI := 1
   UBOOTENV_IN_UBI := 1
-  KERNEL := kernel-bin | gzip
+  KERNEL := kernel-bin | libdeflate-gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
@@ -4238,6 +4489,25 @@ define Device/zbtlink_zbt-z8103ax-c
 endef
 TARGET_DEVICES += zbtlink_zbt-z8103ax-c
 
+define Device/zbtlink_zbt-z8105ax-c
+  DEVICE_VENDOR := Zbtlink
+  DEVICE_MODEL := ZBT-Z8105AX-C
+  SUPPORTED_DEVICES += zbtlink,z8105ax-2sim
+  DEVICE_DTS := mt7981b-zbtlink-zbt-z8105ax-c
+  DEVICE_DTS_DIR := ../dts
+  DEVICE_PACKAGES := kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware \
+	kmod-usb3 kmod-usb-net-qmi-wwan kmod-usb-serial-option automount
+  KERNEL_IN_UBI := 1
+  UBINIZE_OPTS := -E 5
+  BLOCKSIZE := 128k
+  PAGESIZE := 2048
+  IMAGE_SIZE := 65536k
+  IMAGES += factory.bin
+  IMAGE/factory.bin := append-ubi | check-size $$(IMAGE_SIZE)
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+endef
+TARGET_DEVICES += zbtlink_zbt-z8105ax-c
+
 define Device/zbtlink_zbt-z8106ax-s
   DEVICE_VENDOR := Zbtlink
   DEVICE_MODEL := ZBT-Z8106AX-S
@@ -4286,7 +4556,7 @@ define Device/zbtlink_zbt-z8803be
   DEVICE_PACKAGES := kmod-sfp kmod-hwmon-pwmfan kmod-usb3 kmod-mt7996-firmware mt7988-2p5g-phy-firmware mt7988-wo-firmware
   DEVICE_DTC_FLAGS := --pad 4096
   SUPPORTED_DEVICES += zbtlink,zbt-z8803be,mt7988a-nand
-  KERNEL := kernel-bin | gzip | \
+  KERNEL := kernel-bin | libdeflate-gzip | \
 	fit gzip $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k

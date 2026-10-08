@@ -1,0 +1,482 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+/dts-v1/;
+
+/* Firmware reserves the first 2 MiB of DRAM. */
+/memreserve/ 0x80000000 0x200000;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/leds/common.h>
+#include <dt-bindings/phy/phy.h>
+#include "an7581.dtsi"
+#include "an7581-npu-mt7996.dtsi"
+
+/ {
+	model = "Gemtek XR1710G (OpenWrt U-Boot UBI layout)";
+	compatible = "gemtek,xr1710g-ubi",
+		     "airoha,an7581", "airoha,en7581";
+	aliases {
+		serial0 = &uart1;
+		led-boot = &led_status_red;
+		led-failsafe = &led_status_blue;
+		led-upgrade = &led_status_blue;
+		led-running = &led_status_green;
+	};
+	chosen {
+		/* Create fastmap on first attach for boot firmware and Linux reuse. */
+		bootargs = "console=ttyS0,115200 earlycon cpufreq.default_governor=powersave";
+		rootdisk = <&ubi_fit>;
+		stdout-path = "serial0:115200n8";
+		linux,usable-memory-range = <0x0 0x80200000 0x0 0x7fe00000>;
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		/* The board contains 2 GiB of DRAM. */
+		reg = <0x0 0x80000000 0x0 0x80000000>;
+	};
+
+	keys {
+		compatible = "gpio-keys";
+		key-restart {
+			label = "reset";
+			gpios = <&en7581_pinctrl 0 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_RESTART>;
+			debounce-interval = <60>;
+		};
+	};
+	leds {
+		compatible = "gpio-leds";
+		led_status_green: led-status-green {
+			color = <LED_COLOR_ID_GREEN>;
+			function = LED_FUNCTION_STATUS;
+			gpios = <&en7581_pinctrl 17 GPIO_ACTIVE_LOW>;
+		};
+		led_status_blue: led-status-blue {
+			color = <LED_COLOR_ID_BLUE>;
+			function = LED_FUNCTION_STATUS;
+			gpios = <&en7581_pinctrl 19 GPIO_ACTIVE_LOW>;
+		};
+		led_status_red: led-status-red {
+			color = <LED_COLOR_ID_RED>;
+			function = LED_FUNCTION_STATUS;
+			gpios = <&en7581_pinctrl 29 GPIO_ACTIVE_LOW>;
+			default-state = "on";
+		};
+		led_status_white: led-status-white {
+			color = <LED_COLOR_ID_WHITE>;
+			function = LED_FUNCTION_STATUS;
+			gpios = <&en7581_pinctrl 20 GPIO_ACTIVE_LOW>;
+		};
+	};
+};
+
+&en7581_pinctrl {
+	gpio-ranges = <&en7581_pinctrl 0 13 47>;
+	mdio_pins: mdio-pins {
+		mux {
+			function = "mdio";
+			groups = "mdio";
+		};
+		conf {
+			pins = "gpio2";
+			output-high;
+		};
+	};
+	pcie0_rst_pins: pcie0-rst-pins {
+		conf {
+			pins = "pcie_reset0";
+			drive-open-drain = <1>;
+		};
+	};
+	pcie2_rst_pins: pcie2-rst-pins {
+		conf {
+			pins = "pcie_reset2";
+			drive-open-drain = <1>;
+		};
+	};
+	/* LAN2/LAN3 LEDs are driven directly by the internal MT7530 switch. */
+	gswp1_led0_pins: gswp1-led0-pins {
+		mux {
+			function = "phy1_led0";
+			pins = "gpio33";
+		};
+	};
+	gswp1_led1_pins: gswp1-led1-pins {
+		mux {
+			function = "phy1_led1";
+			pins = "gpio43";
+		};
+	};
+	gswp2_led0_pins: gswp2-led0-pins {
+		mux {
+			function = "phy2_led0";
+			pins = "gpio34";
+		};
+	};
+	gswp2_led1_pins: gswp2-led1-pins {
+		mux {
+			function = "phy2_led1";
+			pins = "gpio44";
+		};
+	};
+	uart2_pins: uart2-pins {
+		mux {
+			function = "uart";
+			groups = "uart2";
+		};
+	};
+	hsuart_pins: hsuart-pins {
+		mux {
+			function = "uart";
+			groups = "hsuart";
+		};
+	};
+};
+&snfi {
+	status = "okay";
+};
+&spi_nand {
+	/* Winbond W25N04K provides 512 MiB with 2 KiB pages and 128 KiB blocks. */
+	compatible = "winbond,w25n04kv", "spi-nand";
+	nand-ecc-engine = <&spi_nand>;
+
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		partition@0 {
+			label = "bl2";
+			/* BootROM reads the BL2 FIP at offset 0x800 in the first eraseblock. */
+			reg = <0x00000000 0x00020000>;
+			read-only;
+		};
+		partition@20000 {
+			label = "ubi";
+			/* A zero size extends the UBI partition to the physical NAND end. */
+			reg = <0x00020000 0x00000000>;
+			compatible = "linux,ubi";
+			volumes {
+				ubi_fip: ubi-volume-fip {
+					volname = "fip";
+				};
+
+				ubi_env: ubi-volume-ubootenv {
+					volname = "ubootenv";
+				};
+
+				ubi_env2: ubi-volume-ubootenv2 {
+					volname = "ubootenv2";
+				};
+
+				/*
+				 * pbs05/uboot-an758x creates one 2 MiB static UBI volume
+				 * named "factory". Restore the complete OOB-stripped stock
+				 * DSD partition into it; do not use the legacy repacked
+				 * EEPROM-at-0/MAC-at-0x5000 factory image.
+				 */
+				factory_storage: ubi-volume-factory {
+					volname = "factory";
+
+					nvmem-layout {
+						compatible = "fixed-layout";
+						#address-cells = <1>;
+						#size-cells = <1>;
+
+						eeprom: eeprom@5000 {
+							/* MT7996 EEPROM/calibration follows the DSD backup at 0x5000. */
+							reg = <0x00005000 0x00001e00>;
+						};
+
+						wan_mac: mac-address@6c {
+							/* DSD main-data backup keeps the original 17-byte colon-delimited MAC text. */
+							compatible = "mac-base";
+							reg = <0x0000006c 0x00000011>;
+							#nvmem-cell-cells = <1>;
+						};
+
+						lan_mac: mac-address@86 {
+							/* +0: main LAN2, +1/+2/+3: Wi-Fi bands, +4: CPU. */
+							compatible = "mac-base";
+							reg = <0x00000086 0x00000011>;
+							#nvmem-cell-cells = <1>;
+						};
+					};
+				};
+
+				ubi_fit: ubi-volume-fit {
+					/* The fit volume contains the kernel and read-only rootfs. */
+					volname = "fit";
+				};
+			};
+		};
+	};
+};
+
+&ubi_env {
+	nvmem-layout {
+		compatible = "u-boot,env-redundant-bool-layout";
+	};
+};
+
+&ubi_env2 {
+	nvmem-layout {
+		compatible = "u-boot,env-redundant-bool-layout";
+	};
+};
+
+&i2c0 {
+	status = "okay";
+	hwmon@2e {
+		compatible = "nuvoton,nct7802";
+		reg = <0x2e>;
+	};
+};
+&pcie0 {
+	status = "okay";
+
+	reg = <0x0 0x1fc00000 0x0 0x1670>,
+	      <0x0 0x1fc20000 0x0 0x1670>;
+
+	reg-names = "pcie-mac", "sec-pcie-mac";
+
+	resets = <&scuclk EN7581_PCIE0_RST>,
+		 <&scuclk EN7581_PCIE1_RST>,
+		 <&scuclk EN7581_PCIC_PERSTOUT0_RST>,
+		 <&scuclk EN7581_PCIC_PERSTOUT1_RST>;
+
+	reset-names = "phy-lane0",
+		      "phy-lane1",
+		      "perstout",
+		      "sec-perstout";
+
+	num-lanes = <2>;
+	max-link-speed = <3>;
+
+	airoha,scu = <&scuclk>;
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pcie0_rst_pins>;
+	pcie@0,0 {
+		reg = <0x0000 0 0 0 0>;
+		device_type = "pci";
+		#address-cells = <3>;
+		#size-cells = <2>;
+		mt7996@0,0 {
+			reg = <0x0000 0 0 0 0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			nvmem-cells = <&eeprom>;
+			nvmem-cell-names = "eeprom";
+			airoha,npu = <&npu>;
+			airoha,eth = <&eth>;
+			band@0 {
+				/* 2.4 GHz */
+				reg = <0>;
+				nvmem-cells = <&lan_mac 1>;
+				nvmem-cell-names = "mac-address";
+			};
+			band@1 {
+				/* 5 GHz */
+				reg = <1>;
+				nvmem-cells = <&lan_mac 2>;
+				nvmem-cell-names = "mac-address";
+			};
+			band@2 {
+				/* 6 GHz */
+				reg = <2>;
+				nvmem-cells = <&lan_mac 3>;
+				nvmem-cell-names = "mac-address";
+			};
+		};
+	};
+};
+
+&pcie1 {
+	status = "disabled";
+};
+
+&pcie2 {
+	status = "okay";
+	max-link-speed = <2>;
+	airoha,wait-for-pcie0-perst;
+	airoha,scu = <&scuclk>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pcie2_rst_pins>;
+};
+
+&cpufreq {
+	reg = <0x0 0x1fa20000 0x0 0x2c0
+	       0x0 0x1efbe000 0x0 0x800>;
+	reg-names = "chip-scu", "mcucfg";
+	airoha,force-direct-pll;
+};
+
+&cpu_opp_table {
+	opp-1250000000 {
+		opp-hz = /bits/ 64 <1250000000>;
+		required-opps = <&smcc_opp15>;
+	};
+
+	opp-1300000000 {
+		opp-hz = /bits/ 64 <1300000000>;
+		required-opps = <&smcc_opp16>;
+	};
+
+	opp-1350000000 {
+		opp-hz = /bits/ 64 <1350000000>;
+		required-opps = <&smcc_opp17>;
+	};
+
+	opp-1400000000 {
+		opp-hz = /bits/ 64 <1400000000>;
+		required-opps = <&smcc_opp18>;
+	};
+};
+
+&cpu_smcc_opp_table {
+	smcc_opp15: opp15 {
+		opp-level = <15>;
+	};
+
+	smcc_opp16: opp16 {
+		opp-level = <16>;
+	};
+
+	smcc_opp17: opp17 {
+		opp-level = <17>;
+	};
+
+	smcc_opp18: opp18 {
+		opp-level = <18>;
+	};
+};
+&npu {
+	status = "okay";
+};
+&afe {
+	status = "disabled";
+};
+&eth {
+	status = "okay";
+};
+
+&gdm1 {
+	status = "okay";
+	nvmem-cells = <&lan_mac 4>;
+	nvmem-cell-names = "mac-address";
+	openwrt,netdev-name = "cpu";
+};
+&gdm2 {
+	status = "okay";
+	managed = "in-band-status";
+	phy-handle = <&phy8>;
+	phy-mode = "usxgmii";
+	nvmem-cells = <&wan_mac 0>;
+	nvmem-cell-names = "mac-address";
+	openwrt,netdev-name = "wan";
+};
+&eth_pcs {
+	status = "okay";
+};
+&gdm4 {
+	status = "okay";
+	managed = "in-band-status";
+	phy-handle = <&phy5>;
+	phy-mode = "usxgmii";
+	nvmem-cells = <&lan_mac 0>;
+	nvmem-cell-names = "mac-address";
+	openwrt,netdev-name = "lan2";
+};
+&switch {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&mdio_pins>;
+	mdio {
+		phy5: ethernet-phy@5 {
+			compatible = "ethernet-phy-ieee802.3-c45";
+			reg = <5>;
+			reset-gpios = <&en7581_pinctrl 46 GPIO_ACTIVE_LOW>;
+			reset-before-id-read;
+			reset-assert-us = <200000>;
+			reset-deassert-us = <200000>;
+			tx-polarity = <PHY_POL_INVERT>;
+			rx-polarity = <PHY_POL_INVERT>;
+			realtek,patch-rtk-serdes;
+		};
+		phy8: ethernet-phy@8 {
+			compatible = "ethernet-phy-ieee802.3-c45";
+			reg = <8>;
+			reset-gpios = <&en7581_pinctrl 31 GPIO_ACTIVE_LOW>;
+			reset-assert-us = <200000>;
+			reset-deassert-us = <200000>;
+			tx-polarity = <PHY_POL_INVERT>;
+			rx-polarity = <PHY_POL_INVERT>;
+			realtek,patch-rtk-serdes;
+		};
+	};
+};
+&gsw_phy1 {
+	status = "okay";
+	pinctrl-names = "gbe-led";
+	pinctrl-0 = <&gswp1_led0_pins>, <&gswp1_led1_pins>;
+	leds {
+		/delete-node/ led@0;
+		/delete-node/ led@1;
+		lan3-green {
+			reg = <0>;
+			linux,led-devicename = "lan3";
+			label = "green";
+			active-low;
+			status = "okay";
+		};
+		lan3-amber {
+			reg = <1>;
+			linux,led-devicename = "lan3";
+			label = "amber";
+			active-low;
+			status = "okay";
+		};
+	};
+};
+&gsw_port1 {
+	status = "okay";
+	label = "lan3";
+};
+&gsw_phy2 {
+	status = "okay";
+	pinctrl-names = "gbe-led";
+	pinctrl-0 = <&gswp2_led0_pins>, <&gswp2_led1_pins>;
+	leds {
+		/delete-node/ led@0;
+		/delete-node/ led@1;
+		lan4-green {
+			reg = <0>;
+			linux,led-devicename = "lan4";
+			label = "green";
+			active-low;
+			status = "okay";
+		};
+		lan4-amber {
+			reg = <1>;
+			linux,led-devicename = "lan4";
+			label = "amber";
+			active-low;
+			status = "okay";
+		};
+	};
+};
+&gsw_port2 {
+	status = "okay";
+	label = "lan4";
+};
+&uart2 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart2_pins>;
+};
+&hsuart3 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&hsuart_pins>;
+};

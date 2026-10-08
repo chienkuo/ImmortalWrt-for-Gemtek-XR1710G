@@ -11,6 +11,7 @@ mode="$1"
 jobs="$2"
 refresh_feeds="$3"
 log_file="$4"
+config_seed="${CONFIG_SEED:-1710.config}"
 
 case "$mode" in
 	kernel|world) ;;
@@ -37,47 +38,26 @@ run_build() {
 	echo "REMOTE_BUILD_COMMIT=$(git rev-parse HEAD)"
 	echo "REMOTE_BUILD_STARTED=$(date --iso-8601=seconds)"
 	echo "REMOTE_BUILD_JOBS=$jobs"
+	echo "REMOTE_BUILD_CONFIG_SEED=$config_seed"
 
-if [[ "$refresh_feeds" == "1" ]]; then
+	if [[ ! -f "$config_seed" ]]; then
+		echo "config seed not found: $config_seed" >&2
+		exit 2
+	fi
+
+	if [[ "$refresh_feeds" == "1" ]]; then
 		./scripts/feeds update -a
 		./scripts/feeds install -a
 	fi
 
-apply_feed_patches() {
-	local patch_file feed_path feed_name feed_dir
-
-	[[ -d patches/feeds ]] || return 0
-
-	while IFS= read -r -d '' patch_file; do
-		feed_path="${patch_file#patches/feeds/}"
-		feed_name="${feed_path%%/*}"
-		feed_dir="feeds/$feed_name"
-		patch_path="$PWD/$patch_file"
-
-		if [[ ! -d "$feed_dir" ]]; then
-			echo "feed directory not found for patch: $patch_file" >&2
-			return 1
-		fi
-
-		if git -C "$feed_dir" apply --check "$patch_path" 2>/dev/null; then
-			echo "Applying feed patch: $patch_file"
-			git -C "$feed_dir" apply "$patch_path"
-		elif git -C "$feed_dir" apply --reverse --check "$patch_path" 2>/dev/null; then
-			echo "Feed patch already applied: $patch_file"
-		else
-			echo "Feed patch does not apply cleanly: $patch_file" >&2
-			return 1
-		fi
-	done < <(find patches/feeds -type f -name '*.patch' -print0 | sort -z)
-}
-
-apply_feed_patches
+	FEED_PATCHES_STRICT=1 bash scripts/apply-feed-patches.sh
 
 	bash scripts/fix-stale-golang-host.sh
 
-	cp config.seed .config
+	cp "$config_seed" .config
 	bash scripts/set-build-version.sh .config
 	make defconfig
+	bash scripts/check-gemtek-profile-isolation.sh --config .config
 
 	case "$mode" in
 		kernel)
@@ -92,6 +72,25 @@ apply_feed_patches
 			make -j"$jobs" world
 			;;
 	esac
+
+	kernel_config="$(find build_dir/target-aarch64_cortex-a53_musl/linux-airoha_an7581 -path '*/linux-*/.config' -print -quit)"
+	[[ -n "$kernel_config" ]] || {
+		echo "kernel config was not generated" >&2
+		exit 1
+	}
+	check_args=(--config .config --kernel-config "$kernel_config")
+	if [[ "$mode" == "world" ]]; then
+		bash scripts/check-firmware-artifacts.sh \
+			--config .config \
+			--directory bin/targets/airoha/an7581
+		manifest="$(find bin/targets/airoha/an7581 -maxdepth 1 -type f -name '*manifest' -print -quit)"
+		[[ -n "$manifest" ]] || {
+			echo "image manifest was not generated" >&2
+			exit 1
+		}
+		check_args+=(--manifest "$manifest")
+	fi
+	bash scripts/check-gemtek-profile-isolation.sh "${check_args[@]}"
 
 	echo "REMOTE_BUILD_FINISHED=$(date --iso-8601=seconds)"
 	if [[ "$mode" == "world" && -d bin/targets/airoha/an7581 ]]; then

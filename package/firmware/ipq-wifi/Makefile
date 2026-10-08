@@ -6,9 +6,9 @@ PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL=$(PROJECT_GIT)/project/firmware/qca-wireless.git
-PKG_SOURCE_DATE:=2026-08-23
-PKG_SOURCE_VERSION:=0c67bbcca45f7fc00255dbb078754cac89d3f40e
-PKG_MIRROR_HASH:=5d9512363e5fc588f5861c116e889b4910e36bf89782aabd334ceb3e42806d66
+PKG_SOURCE_DATE:=2026-10-01
+PKG_SOURCE_VERSION:=6a0f508b9ce3d7b6abf4127f206315ee6c9e1942
+PKG_MIRROR_HASH:=72c12d05177b55a178e1cb73fed5bd823ed9653983ba1ef96f9aecc377a573f9
 PKG_FLAGS:=nonshared
 
 include $(INCLUDE_DIR)/package.mk
@@ -46,6 +46,7 @@ ALLWIFIBOARDS:= \
 	glinet_gl-ax1800 \
 	glinet_gl-axt1800 \
 	glinet_gl-b3000 \
+	glinet_gl-x2000 \
 	huawei_ap4050dn \
 	ignitenet_ss-w2-ac2600 \
 	iodata_wn-dax3000gr \
@@ -75,6 +76,7 @@ ALLWIFIBOARDS:= \
 	netgear_rbk350 \
 	netgear_rbk40 \
 	netgear_rbk750 \
+	netgear_rbk850 \
 	netgear_sxk80 \
 	netgear_wax214 \
 	netgear_wax218 \
@@ -89,10 +91,12 @@ ALLWIFIBOARDS:= \
 	skspruce_wia3300-20 \
 	spectrum_sax1v1k \
 	tcl_linkhub-hh500v \
+	tplink_archer-ax55-v1 \
 	tplink_archer-c59-v1 \
 	tplink_archer-c6-v2 \
 	tplink_archer-c60-v1 \
 	tplink_archer-c60-v2 \
+	tplink_archer-c60-v3 \
 	tplink_deco-x80-5g \
 	tplink_eap225-wall-v2 \
 	tplink_eap610-outdoor \
@@ -101,7 +105,9 @@ ALLWIFIBOARDS:= \
 	tplink_eap620hd-v1 \
 	tplink_eap623-outdoor-hd-v1 \
 	tplink_eap625-outdoor-hd-v1 \
+	tplink_eap650-outdoor-v1 \
 	tplink_eap660hd-v1 \
+	tplink_re700x \
 	tplink_tl-wa1201-v2 \
 	ubnt_utr \
 	wallys_dr40x9 \
@@ -246,6 +252,7 @@ $(eval $(call generate-ipq-wifi-package,elecom_wrc-x3000gs2,ELECOM WRC-X3000GS2)
 $(eval $(call generate-ipq-wifi-package,glinet_gl-ax1800,GL.iNet GL-AX1800))
 $(eval $(call generate-ipq-wifi-package,glinet_gl-axt1800,GL.iNet GL-AXT1800))
 $(eval $(call generate-ipq-wifi-package,glinet_gl-b3000,GL.iNet GL-B3000))
+$(eval $(call generate-ipq-wifi-package,glinet_gl-x2000,GL.iNet GL-X2000))
 $(eval $(call generate-ipq-wifi-package,huawei_ap4050dn,Huawei AP4050DN))
 $(eval $(call generate-ipq-wifi-package,ignitenet_ss-w2-ac2600,Ignitenet SS-W2-AC2600))
 $(eval $(call generate-ipq-wifi-package,iodata_wn-dax3000gr,I-O DATA WN-DAX3000GR))
@@ -275,6 +282,7 @@ $(eval $(call generate-ipq-wifi-package,netgear_rbk20,Netgear RBK20))
 $(eval $(call generate-ipq-wifi-package,netgear_rbk350,Netgear RBK350))
 $(eval $(call generate-ipq-wifi-package,netgear_rbk40,Netgear RBK40))
 $(eval $(call generate-ipq-wifi-package,netgear_rbk750,Netgear RBK750))
+$(eval $(call generate-ipq-wifi-package,netgear_rbk850,Netgear RBK850))
 $(eval $(call generate-ipq-wifi-package,netgear_sxk80,Netgear SXK80))
 $(eval $(call generate-ipq-wifi-package,netgear_wax214,Netgear WAX214))
 $(eval $(call generate-ipq-wifi-package,netgear_wax218,Netgear WAX218))
@@ -289,10 +297,12 @@ $(eval $(call generate-ipq-wifi-package,redmi_ax6,Redmi AX6))
 $(eval $(call generate-ipq-wifi-package,skspruce_wia3300-20,SKSpruce WIA3300-20))
 $(eval $(call generate-ipq-wifi-package,spectrum_sax1v1k,Spectrum SAX1V1K))
 $(eval $(call generate-ipq-wifi-package,tcl_linkhub-hh500v,TCL LINKHUB HH500V))
+$(eval $(call generate-ipq-wifi-package,tplink_archer-ax55-v1,TP-Link Archer AX55 v1))
 $(eval $(call generate-ipq-wifi-package,tplink_archer-c59-v1,TP-Link Archer C59 V1))
 $(eval $(call generate-ipq-wifi-package,tplink_archer-c6-v2,TP-Link Archer C6 V2))
 $(eval $(call generate-ipq-wifi-package,tplink_archer-c60-v1,TP-Link Archer C60 V1))
 $(eval $(call generate-ipq-wifi-package,tplink_archer-c60-v2,TP-Link Archer C60 V2))
+$(eval $(call generate-ipq-wifi-package,tplink_archer-c60-v3,TP-Link Archer C60 V3))
 $(eval $(call generate-ipq-wifi-package,tplink_deco-x80-5g,TP-Link Deco X80-5G))
 $(eval $(call generate-ipq-wifi-package,tplink_eap225-wall-v2,TP-Link EAP225-Wall v2))
 $(eval $(call generate-ipq-wifi-package,tplink_eap610-outdoor,TPLink EAP610-Outdoor))
@@ -301,7 +311,9 @@ $(eval $(call generate-ipq-wifi-package,tplink_eap620-hd-v3,TP-Link EAP620 HD v3
 $(eval $(call generate-ipq-wifi-package,tplink_eap620hd-v1,TP-Link EAP620 HD v1))
 $(eval $(call generate-ipq-wifi-package,tplink_eap623-outdoor-hd-v1,TP-Link EAP623-Outdoor HD v1))
 $(eval $(call generate-ipq-wifi-package,tplink_eap625-outdoor-hd-v1,TP-Link EAP625-Outdoor HD v1))
+$(eval $(call generate-ipq-wifi-package,tplink_eap650-outdoor-v1,TP-Link EAP650-Outdoor v1))
 $(eval $(call generate-ipq-wifi-package,tplink_eap660hd-v1,TP-Link EAP660 HD v1))
+$(eval $(call generate-ipq-wifi-package,tplink_re700x,TP-Link RE700X))
 $(eval $(call generate-ipq-wifi-package,tplink_tl-wa1201-v2,TP-Link TL-WA1201 V2))
 $(eval $(call generate-ipq-wifi-package,ubnt_utr,Ubiquiti UniFi Travel Router))
 $(eval $(call generate-ipq-wifi-package,wallys_dr40x9,Wallys DR40X9))

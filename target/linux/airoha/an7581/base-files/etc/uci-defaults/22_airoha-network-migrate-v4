@@ -3,7 +3,10 @@
 . /lib/functions.sh
 . /lib/functions/system.sh
 
-[ "$(board_name)" = "gemtek,xr1710g-ubi" ] || exit 0
+case "$(board_name)" in
+gemtek,xr1710g|gemtek,xr1710g-ubi) ;;
+*) exit 0 ;;
+esac
 
 migrated=0
 
@@ -146,6 +149,24 @@ set_xr1710g_wan_clientid_default() {
 	migrated=1
 }
 
+#
+# br-lan is deliberately left as a plain (non-VLAN-aware) bridge here.
+#
+# Enabling VLAN filtering is the operator's decision, not the firmware's:
+# LuCI's Network -> Switch view writes both the vlan_filtering flag and the
+# bridge-vlan sections as soon as someone actually configures a VLAN there.
+#
+# An earlier revision of this script did it automatically, which was wrong in
+# two ways. It tested "!= 1" and therefore re-asserted vlan_filtering=1 on
+# every boot, silently overriding an operator who had turned it off on
+# purpose; and merely creating a bridge-vlan section is itself enough to make
+# netifd enable VLAN filtering, so the forwarding behaviour changed without
+# anyone asking for it.
+#
+# Everything above is what this script is actually for: migrating the legacy
+# netdev spelling (ae_wan/eth0/eth1/lan1 and their VLAN sub-interfaces) to
+# wan/lan2, plus the wan DHCP clientid default.
+#
 config_load network
 config_foreach migrate_xr1710g_device device
 config_foreach migrate_xr1710g_interface interface

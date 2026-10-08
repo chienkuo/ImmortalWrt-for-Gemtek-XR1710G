@@ -1,8 +1,15 @@
 src-git packages https://github.com/immortalwrt/packages.git
 src-git luci https://github.com/immortalwrt/luci.git
+src-git --directory=luci-theme-glass glass https://github.com/rchen14b/luci-theme-glass.git;main
 src-git routing https://github.com/openwrt/routing.git
 src-git telephony https://github.com/openwrt/telephony.git
 #src-git video https://github.com/openwrt/video.git
+src-git app_airoha https://github.com/naoki66/luci-app-airoha.git
+src-git pon_drivers https://github.com/naoki66/openwrt-pon-drivers.git
+src-git pon_userspace https://github.com/naoki66/openwrt-pon-userspace.git
 #src-git targets https://github.com/openwrt/targets.git
 #src-git oldpackages http://git.openwrt.org/packages.git
 #src-link custom /usr/src/openwrt/custom-feed
+src-git easytier https://github.com/EasyTier/luci-app-easytier.git;main
+src-git openwrt_bandix https://github.com/timsaya/openwrt-bandix.git;main
+src-git luci_app_bandix https://github.com/timsaya/luci-app-bandix.git;main
