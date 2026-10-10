@@ -245,14 +245,7 @@ define Device/gemtek_xr1710g
   $(call Device/gemtek_xr1710g-common)
   DEVICE_ALT0_VENDOR := Brightspeed
   DEVICE_ALT0_MODEL := XR1710G
-  # This is the stock/vendor U-Boot layout (bl2 at 0x0 spanning 6 MiB, ubi at
-  # 0x700000) that this repository shipped as "gemtek_xr1710g-ubi" before the
-  # device was split. Devices flashed back then still report the old board name
-  # gemtek,xr1710g-ubi, so accept it here - otherwise they have no upgrade path
-  # at all. Cross-flashing with the OpenWrt U-Boot UBI image stays blocked by
-  # the DEVICE_COMPAT_VERSION guard (1.0 <-> 2.0), which is intended: that
-  # layout needs bl2 at 0x0 spanning 128 KiB and ubi starting at 0x20000.
-  SUPPORTED_DEVICES := gemtek,xr1710g gemtek,xr1710g-ubi
+  SUPPORTED_DEVICES := gemtek,xr1710g
 endef
 TARGET_DEVICES += gemtek_xr1710g
 
