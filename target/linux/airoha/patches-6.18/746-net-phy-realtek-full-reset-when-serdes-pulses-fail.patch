@@ -14,19 +14,69 @@ bounded to 3 full resets to avoid an infinite recovery loop.
 
 Signed-off-by: zhangjianguo <janegle@gmail.com>
 ---
+
+When the pulse ladder and the full PHY resets cannot recover the carrier,
+the port can stay wedged indefinitely: copper AN keeps running and the
+peer locks onto our signal (half-open link), but the AN7581 PCS/USXGMII
+lane never locks onto the peer. The PHY-side ladder cannot un-wedge it;
+the only known fix is a full interface re-init (phylink restart ->
+pcs_config -> JCPLL VCO recal), which is also why a reboot recovered the
+port.
+
+Add an in-driver lane restart:
+- track brief link-ups (up that drops again within 5 s); two brief ups
+  schedule a deferred phylink_stop()/phylink_start() (rtnl + workqueue,
+  no lock nesting with the phylib state machine), re-running pcs_config
+  and the JCPLL VCO recal;
+- a link that holds for 10 s re-arms the recovery for the next episode;
+- the ladder's terminal state ("recovery failed after N full resets")
+  also schedules the restart as a backstop, once per episode.
 --- a/drivers/net/phy/realtek/realtek.h
 +++ b/drivers/net/phy/realtek/realtek.h
-@@ -20,6 +20,7 @@
+@@ -20,6 +20,12 @@
  	enum rtl826x_rtk_serdes_state rtk_serdes_state;
  	u32 rtk_serdes_pulse_count;
  	u8 rtk_serdes_carrier_polls;
 +	u8 rtk_serdes_full_resets;
++	u8 rtk_brief_ups;
++	bool rtk_link_up;
++	unsigned long rtk_link_up_ts;
++	bool lane_restart_done;
++	struct delayed_work lane_restart_work;
  	bool enable_pma_low_power:1;
  	bool patch_rtk_serdes:1;
- };
+ 	struct phy_device *phydev;
 --- a/drivers/net/phy/realtek/realtek_main.c
 +++ b/drivers/net/phy/realtek/realtek_main.c
-@@ -2653,6 +2653,54 @@
+@@ -13,6 +13,10 @@
+ #include <linux/firmware.h>
+ #include <linux/of.h>
+ #include <linux/phy.h>
++#include <linux/phylink.h>
++#include <linux/rtnetlink.h>
++
++static void rtl826x_lane_restart_work(struct work_struct *work);
+ #include <linux/phy/phy-common-props.h>
+ #include <linux/pm_wakeirq.h>
+ #include <linux/netdevice.h>
+@@ -3354,6 +3358,7 @@
+ 	struct rtl826x_priv *priv = data;
+ 
+ 	cancel_delayed_work_sync(&priv->sds_work);
++	cancel_delayed_work_sync(&priv->lane_restart_work);
+ }
+ 
+ static int rtl826x_probe(struct phy_device *phydev)
+@@ -3375,6 +3380,8 @@
+ 	phydev->priv = priv;
+ 
+ 	INIT_DELAYED_WORK(&priv->sds_work, rtl826x_sds_reset_work);
++	INIT_DELAYED_WORK(&priv->lane_restart_work,
++			  rtl826x_lane_restart_work);
+ 	ret = devm_add_action_or_reset(dev, rtl826x_cancel_sds_work, priv);
+ 	if (ret)
+ 		return ret;
+@@ -3645,6 +3652,54 @@
  	return genphy_c45_check_and_restart_aneg(phydev, changed);
  }
  
@@ -81,11 +131,86 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  static int rtl826x_rtk_serdes_pulse(struct phy_device *phydev)
  {
  	struct rtl826x_priv *priv = phydev->priv;
-@@ -2793,6 +2841,22 @@
+@@ -3668,6 +3723,34 @@
+ 	return 0;
+ }
+ 
++static void rtl826x_lane_restart_work(struct work_struct *work)
++{
++	struct rtl826x_priv *priv = container_of(work, struct rtl826x_priv,
++						 lane_restart_work.work);
++	struct phy_device *phydev = priv->phydev;
++	struct phylink *pl;
++
++	rtnl_lock();
++	if (phydev->attached_dev && phydev->phylink) {
++		pl = phydev->phylink;
++		phydev_info(phydev,
++			    "RTK SerDes lane wedged, restarting phylink (pcs_config + JCPLL recal)\n");
++		phylink_stop(pl);
++		phylink_start(pl);
++	}
++	rtnl_unlock();
++}
++
++static void rtl826x_schedule_lane_restart(struct rtl826x_priv *priv)
++{
++	if (priv->lane_restart_done)
++		return;
++
++	priv->lane_restart_done = true;
++	priv->rtk_brief_ups = 0;
++	schedule_delayed_work(&priv->lane_restart_work, msecs_to_jiffies(200));
++}
++
+ static int rtl826x_read_status(struct phy_device *phydev)
+ {
+ 	struct rtl826x_priv *priv = phydev->priv;
+@@ -3709,6 +3792,31 @@
+ 	if (!priv || !priv->patch_rtk_serdes)
+ 		return 0;
+ 
++	/* Detect the PCS lane wedge signature: link-ups that drop again
++	 * within a few seconds. The pulse/full-reset ladder cannot un-wedge
++	 * the AN7581 PCS/USXGMII lane; a phylink restart (pcs_config ->
++	 * JCPLL VCO recal) does.
++	 */
++	if (phydev->link && !priv->rtk_link_up) {
++		priv->rtk_link_up = true;
++		priv->rtk_link_up_ts = jiffies;
++	} else if (!phydev->link && priv->rtk_link_up) {
++		priv->rtk_link_up = false;
++		if (time_before(jiffies, priv->rtk_link_up_ts + 5 * HZ)) {
++			if (++priv->rtk_brief_ups >= 2)
++				rtl826x_schedule_lane_restart(priv);
++		} else {
++			priv->rtk_brief_ups = 0;
++		}
++	}
++
++	/* A link that holds for 10 s re-arms the recovery for the next
++	 * episode.
++	 */
++	if (phydev->link && time_after(jiffies,
++				       priv->rtk_link_up_ts + 10 * HZ))
++		priv->lane_restart_done = false;
++
+ 	if (!aneg_done) {
+ 		ret = genphy_c45_aneg_done(phydev);
+ 		if (ret < 0)
+@@ -3776,6 +3884,8 @@
+ 			phydev_info(phydev,
+ 				    "RTK SerDes carrier recovered after %u flow_s pulse(s)\n",
+ 				    priv->rtk_serdes_pulse_count);
++			priv->rtk_brief_ups = 0;
++			priv->lane_restart_done = false;
+ 			priv->rtk_serdes_state = RTL826X_RTK_SERDES_IDLE;
  			return 0;
+ 		}
+@@ -3786,6 +3896,23 @@
  
  		priv->rtk_serdes_carrier_polls = 0;
-+
+ 
 +		if (priv->rtk_serdes_pulse_count >= 5) {
 +			/* Repeated pulses did not recover the PCS carrier:
 +			 * the host-side AN engine is stuck. Escalate to a
@@ -98,9 +223,11 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
 +			phydev_err(phydev,
 +				   "RTK SerDes recovery failed after %u full resets\n",
 +				   priv->rtk_serdes_full_resets);
++			rtl826x_schedule_lane_restart(priv);
 +			priv->rtk_serdes_state = RTL826X_RTK_SERDES_IDLE;
 +			return 0;
 +		}
- 
++
  		return rtl826x_rtk_serdes_pulse(phydev);
  	case RTL826X_RTK_SERDES_IDLE:
+ 		return 0;
