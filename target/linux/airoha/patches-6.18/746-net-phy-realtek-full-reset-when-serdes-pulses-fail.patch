@@ -24,11 +24,15 @@ pcs_config -> JCPLL VCO recal), which is also why a reboot recovered the
 port.
 
 Add an in-driver lane restart:
-- track brief link-ups (up that drops again within 5 s); two brief ups
-  schedule a deferred phylink_stop()/phylink_start() (rtnl + workqueue,
-  no lock nesting with the phylib state machine), re-running pcs_config
-  and the JCPLL VCO recal;
-- a link that holds for 10 s re-arms the recovery for the next episode;
+- anchor on the pulse episode: if a flow_s pulse happened at least 30 s
+  ago and the netdev carrier is still down, schedule a deferred
+  phylink_stop()/phylink_start() (rtnl + workqueue, no lock nesting with
+  the phylib state machine), re-running pcs_config and the JCPLL VCO
+  recal. The brief copper link-ups of the wedge are too short (ms range)
+  for the 1 s read_status poll to count, so the trigger is carrier-based
+  instead;
+- a carrier that holds for 10 s re-arms the recovery for the next
+  episode;
 - the ladder's terminal state ("recovery failed after N full resets")
   also schedules the restart as a backstop, once per episode.
 --- a/drivers/net/phy/realtek/realtek.h
@@ -38,9 +42,9 @@ Add an in-driver lane restart:
  	u32 rtk_serdes_pulse_count;
  	u8 rtk_serdes_carrier_polls;
 +	u8 rtk_serdes_full_resets;
-+	u8 rtk_brief_ups;
-+	bool rtk_link_up;
-+	unsigned long rtk_link_up_ts;
++	bool rtk_carrier_ok;
++	unsigned long rtk_carrier_up_ts;
++	unsigned long rtk_pulse_start_ts;
 +	bool lane_restart_done;
 +	struct delayed_work lane_restart_work;
  	bool enable_pma_low_power:1;
@@ -131,7 +135,7 @@ Add an in-driver lane restart:
  static int rtl826x_rtk_serdes_pulse(struct phy_device *phydev)
  {
  	struct rtl826x_priv *priv = phydev->priv;
-@@ -3668,6 +3723,34 @@
+@@ -3668,6 +3723,33 @@
  	return 0;
  }
  
@@ -159,55 +163,64 @@ Add an in-driver lane restart:
 +		return;
 +
 +	priv->lane_restart_done = true;
-+	priv->rtk_brief_ups = 0;
 +	schedule_delayed_work(&priv->lane_restart_work, msecs_to_jiffies(200));
 +}
 +
  static int rtl826x_read_status(struct phy_device *phydev)
  {
  	struct rtl826x_priv *priv = phydev->priv;
-@@ -3709,6 +3792,31 @@
+@@ -3709,6 +3791,41 @@
  	if (!priv || !priv->patch_rtk_serdes)
  		return 0;
  
-+	/* Detect the PCS lane wedge signature: link-ups that drop again
-+	 * within a few seconds. The pulse/full-reset ladder cannot un-wedge
-+	 * the AN7581 PCS/USXGMII lane; a phylink restart (pcs_config ->
-+	 * JCPLL VCO recal) does.
++	/* A flow_s pulse that cannot produce a stable carrier within
++	 * 30 s is the PCS lane wedge signature (brief copper link-ups
++	 * are too short for the 1 s poll to count reliably). The
++	 * pulse/full-reset ladder cannot un-wedge the AN7581
++	 * PCS/USXGMII lane; a phylink restart (pcs_config -> JCPLL VCO
++	 * recal) does.
 +	 */
-+	if (phydev->link && !priv->rtk_link_up) {
-+		priv->rtk_link_up = true;
-+		priv->rtk_link_up_ts = jiffies;
-+	} else if (!phydev->link && priv->rtk_link_up) {
-+		priv->rtk_link_up = false;
-+		if (time_before(jiffies, priv->rtk_link_up_ts + 5 * HZ)) {
-+			if (++priv->rtk_brief_ups >= 2)
-+				rtl826x_schedule_lane_restart(priv);
-+		} else {
-+			priv->rtk_brief_ups = 0;
++	if (priv->rtk_serdes_pulse_count && !priv->rtk_pulse_start_ts)
++		priv->rtk_pulse_start_ts = jiffies;
++	else if (!priv->rtk_serdes_pulse_count)
++		priv->rtk_pulse_start_ts = 0;
++
++	if (phydev->attached_dev) {
++		if (netif_carrier_ok(phydev->attached_dev) &&
++		    !priv->rtk_carrier_ok) {
++			priv->rtk_carrier_ok = true;
++			priv->rtk_carrier_up_ts = jiffies;
++		} else if (!netif_carrier_ok(phydev->attached_dev)) {
++			priv->rtk_carrier_ok = false;
 +		}
 +	}
 +
-+	/* A link that holds for 10 s re-arms the recovery for the next
-+	 * episode.
++	if (priv->rtk_pulse_start_ts && !priv->lane_restart_done &&
++	    time_after(jiffies, priv->rtk_pulse_start_ts + 30 * HZ) &&
++	    !(phydev->attached_dev &&
++	      netif_carrier_ok(phydev->attached_dev)))
++		rtl826x_schedule_lane_restart(priv);
++
++	/* A carrier that holds for 10 s re-arms the recovery for the
++	 * next episode.
 +	 */
-+	if (phydev->link && time_after(jiffies,
-+				       priv->rtk_link_up_ts + 10 * HZ))
++	if (priv->rtk_carrier_ok &&
++	    time_after(jiffies, priv->rtk_carrier_up_ts + 10 * HZ))
 +		priv->lane_restart_done = false;
 +
  	if (!aneg_done) {
  		ret = genphy_c45_aneg_done(phydev);
  		if (ret < 0)
-@@ -3776,6 +3884,8 @@
+@@ -3776,6 +3893,8 @@
  			phydev_info(phydev,
  				    "RTK SerDes carrier recovered after %u flow_s pulse(s)\n",
  				    priv->rtk_serdes_pulse_count);
-+			priv->rtk_brief_ups = 0;
++			priv->rtk_pulse_start_ts = 0;
 +			priv->lane_restart_done = false;
  			priv->rtk_serdes_state = RTL826X_RTK_SERDES_IDLE;
  			return 0;
  		}
-@@ -3786,6 +3896,23 @@
+@@ -3786,6 +3905,23 @@
  
  		priv->rtk_serdes_carrier_polls = 0;
  
