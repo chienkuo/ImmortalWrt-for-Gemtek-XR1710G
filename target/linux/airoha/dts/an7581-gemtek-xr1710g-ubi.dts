@@ -30,7 +30,21 @@
 		linux,usable-memory-range = <0x0 0x80200000 0x0 0x7fe00000>;
 	};
 
-	memory@80000000 {
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		ramoops@fff00000 {
+			compatible = "ramoops";
+			reg = <0x0 0xfff00000 0x0 0x100000>;
+			record-size = <0x4000>;
+			console-size = <0x80000>;
+			pmsg-size = <0x20000>;
+		};
+	};
+
+memory@80000000 {
 		device_type = "memory";
 		/* The board contains 2 GiB of DRAM. */
 		reg = <0x0 0x80000000 0x0 0x80000000>;
