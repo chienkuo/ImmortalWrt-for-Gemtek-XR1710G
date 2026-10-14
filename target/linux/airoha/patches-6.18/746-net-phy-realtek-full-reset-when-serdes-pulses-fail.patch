@@ -1,5 +1,5 @@
 From: zhangjianguo <janegle@gmail.com>
-Subject: [PATCH] net: phy: realtek: full PHY reset when SerDes pulses fail
+Subject: [PATCH] net: phy: realtek: full PHY reset and lane restart when SerDes pulses fail
 
 Cable hotplug can leave the RTL8261BE host-side USXGMII AN engine stuck:
 copper negotiates 10G but the PCS receives no partner word
@@ -39,13 +39,11 @@ Add an in-driver lane restart:
   also schedules the restart as a backstop.
 --- a/drivers/net/phy/realtek/realtek.h
 +++ b/drivers/net/phy/realtek/realtek.h
-@@ -20,6 +20,12 @@
+@@ -20,6 +20,10 @@
  	enum rtl826x_rtk_serdes_state rtk_serdes_state;
  	u32 rtk_serdes_pulse_count;
  	u8 rtk_serdes_carrier_polls;
 +	u8 rtk_serdes_full_resets;
-+	bool rtk_carrier_ok;
-+	unsigned long rtk_carrier_up_ts;
 +	unsigned long rtk_pulse_start_ts;
 +	unsigned long rtk_lane_restart_ts;
 +	struct delayed_work lane_restart_work;
