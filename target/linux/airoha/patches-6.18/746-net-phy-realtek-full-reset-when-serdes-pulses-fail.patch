@@ -31,10 +31,12 @@ Add an in-driver lane restart:
   recal. The brief copper link-ups of the wedge are too short (ms range)
   for the 1 s read_status poll to count, so the trigger is carrier-based
   instead;
-- a carrier that holds for 10 s re-arms the recovery for the next
-  episode;
+- rate-limit the restart to one per 90 s (cooldown), so a recovery
+  attempt that does not stick still leaves the mechanism armed for the
+  next episode - a boolean latch proved to stay stuck after a failed
+  recovery and blocked all later recoveries;
 - the ladder's terminal state ("recovery failed after N full resets")
-  also schedules the restart as a backstop, once per episode.
+  also schedules the restart as a backstop.
 --- a/drivers/net/phy/realtek/realtek.h
 +++ b/drivers/net/phy/realtek/realtek.h
 @@ -20,6 +20,12 @@
@@ -45,7 +47,7 @@ Add an in-driver lane restart:
 +	bool rtk_carrier_ok;
 +	unsigned long rtk_carrier_up_ts;
 +	unsigned long rtk_pulse_start_ts;
-+	bool lane_restart_done;
++	unsigned long rtk_lane_restart_ts;
 +	struct delayed_work lane_restart_work;
  	bool enable_pma_low_power:1;
  	bool patch_rtk_serdes:1;
@@ -135,7 +137,7 @@ Add an in-driver lane restart:
  static int rtl826x_rtk_serdes_pulse(struct phy_device *phydev)
  {
  	struct rtl826x_priv *priv = phydev->priv;
-@@ -3668,6 +3723,33 @@
+@@ -3668,6 +3723,36 @@
  	return 0;
  }
  
@@ -157,19 +159,22 @@ Add an in-driver lane restart:
 +	rtnl_unlock();
 +}
 +
++/* Rate-limit the restart to once per 90 s: a failed recovery must not
++ * latch the guard and block all later episodes.
++ */
 +static void rtl826x_schedule_lane_restart(struct rtl826x_priv *priv)
 +{
-+	if (priv->lane_restart_done)
++	if (time_before(jiffies, priv->rtk_lane_restart_ts + 90 * HZ))
 +		return;
 +
-+	priv->lane_restart_done = true;
++	priv->rtk_lane_restart_ts = jiffies;
 +	schedule_delayed_work(&priv->lane_restart_work, msecs_to_jiffies(200));
 +}
 +
  static int rtl826x_read_status(struct phy_device *phydev)
  {
  	struct rtl826x_priv *priv = phydev->priv;
-@@ -3709,6 +3791,41 @@
+@@ -3709,6 +3794,24 @@
  	if (!priv || !priv->patch_rtk_serdes)
  		return 0;
  
@@ -185,42 +190,24 @@ Add an in-driver lane restart:
 +	else if (!priv->rtk_serdes_pulse_count)
 +		priv->rtk_pulse_start_ts = 0;
 +
-+	if (phydev->attached_dev) {
-+		if (netif_carrier_ok(phydev->attached_dev) &&
-+		    !priv->rtk_carrier_ok) {
-+			priv->rtk_carrier_ok = true;
-+			priv->rtk_carrier_up_ts = jiffies;
-+		} else if (!netif_carrier_ok(phydev->attached_dev)) {
-+			priv->rtk_carrier_ok = false;
-+		}
-+	}
-+
-+	if (priv->rtk_pulse_start_ts && !priv->lane_restart_done &&
++	if (priv->rtk_pulse_start_ts &&
 +	    time_after(jiffies, priv->rtk_pulse_start_ts + 30 * HZ) &&
 +	    !(phydev->attached_dev &&
 +	      netif_carrier_ok(phydev->attached_dev)))
 +		rtl826x_schedule_lane_restart(priv);
 +
-+	/* A carrier that holds for 10 s re-arms the recovery for the
-+	 * next episode.
-+	 */
-+	if (priv->rtk_carrier_ok &&
-+	    time_after(jiffies, priv->rtk_carrier_up_ts + 10 * HZ))
-+		priv->lane_restart_done = false;
-+
  	if (!aneg_done) {
  		ret = genphy_c45_aneg_done(phydev);
  		if (ret < 0)
-@@ -3776,6 +3893,8 @@
+@@ -3776,6 +3879,7 @@
  			phydev_info(phydev,
  				    "RTK SerDes carrier recovered after %u flow_s pulse(s)\n",
  				    priv->rtk_serdes_pulse_count);
 +			priv->rtk_pulse_start_ts = 0;
-+			priv->lane_restart_done = false;
  			priv->rtk_serdes_state = RTL826X_RTK_SERDES_IDLE;
  			return 0;
  		}
-@@ -3786,6 +3905,23 @@
+@@ -3786,6 +3890,23 @@
  
  		priv->rtk_serdes_carrier_polls = 0;
  
