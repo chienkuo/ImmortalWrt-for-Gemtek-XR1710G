@@ -1,0 +1,137 @@
+From: zhangjianguo <janegle@gmail.com>
+Subject: [PATCH] net: airoha: restart stalled TX ring on queue timeout
+
+A stuck QDMA TX engine on the external SerDes port (XR1710G lan2)
+leaves the GDM TX MIB frozen while the RX direction keeps working:
+after a link flap and recovery the hardware stops consuming TX
+descriptors, the shared QDMA ring is never re-initialized by
+ndo_stop/ndo_open (shared-port teardown skips the cleanup), and only a
+full reboot recovers the port.
+
+The driver arms the TX watchdog (netdev->watchdog_timeo = 5 * HZ) but
+registers no ndo_tx_timeout handler. Add one: on timeout, drain the
+in-flight descriptors of the affected ring (unmap, free skbs, restore
+BQL accounting), reset the descriptors to the boot-time init state,
+re-arm REG_TX_CPU_IDX/REG_TX_DMA_IDX, clear the flushing latch and wake
+every netdev queue mapped to the ring (shared QDMA).
+
+Signed-off-by: zhangjianguo <janegle@gmail.com>
+---
+--- a/drivers/net/ethernet/airoha/airoha_eth.c
++++ b/drivers/net/ethernet/airoha/airoha_eth.c
+@@ -4250,6 +4250,107 @@
+ 	}
+ }
+ 
++static void airoha_dev_tx_timeout(struct net_device *netdev,
++				    unsigned int txqueue)
++{
++	struct airoha_gdm_dev *dev = netdev_priv(netdev);
++	struct airoha_eth *eth = dev->eth;
++	struct airoha_qdma *qdma;
++	struct airoha_queue *q;
++	u16 qid;
++	int i;
++
++	rcu_read_lock();
++	qdma = rcu_dereference(dev->qdma);
++	if (WARN_ON(!qdma)) {
++		rcu_read_unlock();
++		return;
++	}
++	qid = airoha_qdma_get_txq(qdma, txqueue);
++	q = &qdma->q_tx[qid];
++	rcu_read_unlock();
++
++	netdev_err(netdev, "TX queue %u (QDMA q%u) timed out, restarting ring\n",
++		   txqueue, qid);
++
++	/* Drain the in-flight descriptors and re-sync the ring, mirroring the
++	 * boot-time airoha_qdma_init_tx_queue() sequence. A stuck QDMA TX
++	 * engine (observed as a frozen GDM TX MIB after link flap/recovery on
++	 * the external SerDes port) is only cleared by re-arming the ring
++	 * indexes, because the shared QDMA ring is not re-initialized by
++	 * ndo_stop/ndo_open (shared-port teardown skips the cleanup).
++	 */
++	spin_lock_bh(&q->lock);
++	q->flushing = true;
++
++	for (i = 0; i < q->ndesc; i++) {
++		struct airoha_queue_entry *e = &q->entry[i];
++		struct airoha_qdma_desc *desc = &q->desc[i];
++		struct sk_buff *skb = e->skb;
++
++		if (e->dma_type == AIROHA_DMA_UNMAPPED)
++			continue;
++
++		airoha_unmap_xmit_buf(eth, e);
++		list_add_tail(&e->list, &q->tx_list);
++
++		WRITE_ONCE(desc->ctrl,
++			   cpu_to_le32(FIELD_PREP(QDMA_DESC_DONE_MASK, 1)));
++		WRITE_ONCE(desc->addr, 0);
++		WRITE_ONCE(desc->data, 0);
++		WRITE_ONCE(desc->msg0, 0);
++		WRITE_ONCE(desc->msg1, 0);
++		WRITE_ONCE(desc->msg2, 0);
++
++		if (skb) {
++			struct netdev_queue *txq;
++
++			txq = skb_get_tx_queue(skb->dev, skb);
++			netdev_tx_completed_queue(txq, 1, skb->len);
++			dev_kfree_skb_any(skb);
++			e->skb = NULL;
++		}
++
++		q->queued--;
++	}
++
++	airoha_qdma_rmw(qdma, REG_TX_CPU_IDX(qid), TX_RING_CPU_IDX_MASK, 0);
++	airoha_qdma_rmw(qdma, REG_TX_DMA_IDX(qid), TX_RING_DMA_IDX_MASK, 0);
++
++	q->flushing = false;
++	q->txq_stopped = false;
++	spin_unlock_bh(&q->lock);
++
++	/* Wake every netdev queue mapped to this ring (shared QDMA). */
++	for (i = 0; i < ARRAY_SIZE(eth->ports); i++) {
++		struct airoha_gdm_port *port = eth->ports[i];
++		int d;
++
++		if (!port)
++			continue;
++
++		for (d = 0; d < ARRAY_SIZE(port->devs); d++) {
++			struct airoha_gdm_dev *g = port->devs[d];
++			struct net_device *nd;
++			int j;
++
++			if (!g)
++				continue;
++
++			if (rcu_access_pointer(g->qdma) != qdma)
++				continue;
++
++			nd = netdev_from_priv(g);
++			for (j = 0; j < nd->num_tx_queues; j++) {
++				if (airoha_qdma_get_txq(qdma, j) != qid)
++					continue;
++
++				netif_wake_subqueue(nd, j);
++			}
++		}
++	}
++}
++
+ static const struct net_device_ops airoha_netdev_ops = {
+ 	.ndo_init		= airoha_dev_init,
+ 	.ndo_open		= airoha_dev_open,
+@@ -4259,6 +4360,7 @@
+ 	.ndo_fix_features	= airoha_dev_fix_features,
+ 	.ndo_set_features	= airoha_dev_set_features,
+ 	.ndo_start_xmit		= airoha_dev_xmit,
++	.ndo_tx_timeout		= airoha_dev_tx_timeout,
+ 	.ndo_get_stats64        = airoha_dev_get_stats64,
+ 	.ndo_set_mac_address	= airoha_dev_set_macaddr,
+ 	.ndo_setup_tc		= airoha_dev_tc_setup,
