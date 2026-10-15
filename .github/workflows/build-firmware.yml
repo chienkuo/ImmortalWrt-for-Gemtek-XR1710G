@@ -100,15 +100,19 @@ jobs:
       - name: Download sources
         shell: bash
         run: |
-          for i in 1 2 3 4; do
-            if make download -j$(nproc); then
+          # libcronet (naiveproxy) 的 git 源在 runner 上频繁失败，改走 gh-proxy 镜像
+          find feeds -path '*libcronet*' -name Makefile -exec sed -i \
+            's|https://github.com/SagerNet/naiveproxy.git|https://gh-proxy.org/https://github.com/SagerNet/naiveproxy.git|g' {} +
+          for i in 1 2 3 4 5 6; do
+            make download -j$(nproc) V=s 2>&1 | tee download.log
+            if ! grep -qE "failed to build" download.log; then
               echo "download ok (attempt $i)"
               exit 0
             fi
             echo "download failed (attempt $i), retrying in 30s ..."
             sleep 30
           done
-          echo "download failed after 4 attempts" >&2
+          echo "download failed after 6 attempts" >&2
           exit 1
 
       - name: Build Firmware
