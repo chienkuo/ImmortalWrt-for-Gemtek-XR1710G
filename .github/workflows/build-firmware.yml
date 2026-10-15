@@ -114,7 +114,15 @@ jobs:
       - name: Build Firmware
         shell: bash
         run: |
-          make -j2 world V=s 2>&1 | tee build.log
+          for i in 1 2 3; do
+            if make -j2 world V=s 2>&1 | tee build.log; then
+              echo "build ok (attempt $i)"
+              exit 0
+            fi
+            echo "build failed (attempt $i), retrying (make resumes incrementally) ..."
+          done
+          echo "build failed after 3 attempts" >&2
+          exit 1
 
       - name: Verbose retry on build failure
         if: failure()
