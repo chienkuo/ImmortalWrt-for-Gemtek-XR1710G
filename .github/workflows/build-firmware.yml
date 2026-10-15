@@ -98,7 +98,18 @@ jobs:
           grep -E 'CONFIG_(IMAGEOPT|EXTRA_IMAGE_NAME|VERSIONOPT|VERSION_DIST|VERSION_NUMBER|VERSION_CODE|VERSION_FILENAMES|VERSION_CODE_FILENAMES)[= ]' .config
 
       - name: Download sources
-        run: make download -j$(nproc)
+        shell: bash
+        run: |
+          for i in 1 2 3 4; do
+            if make download -j$(nproc); then
+              echo "download ok (attempt $i)"
+              exit 0
+            fi
+            echo "download failed (attempt $i), retrying in 30s ..."
+            sleep 30
+          done
+          echo "download failed after 4 attempts" >&2
+          exit 1
 
       - name: Build Firmware
         shell: bash
