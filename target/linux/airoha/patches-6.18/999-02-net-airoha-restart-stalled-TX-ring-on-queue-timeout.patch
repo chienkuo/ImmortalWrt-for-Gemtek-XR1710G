@@ -16,16 +16,14 @@ its previous value while the ring holds queued descriptors; two
 consecutive stalls trigger a ring restart (drain in-flight descriptors,
 restore BQL accounting, re-arm REG_TX_CPU_IDX/REG_TX_DMA_IDX, clear
 the flushing latch, wake every netdev queue mapped to the shared
-ring). ndo_tx_timeout now shares the same restart helper as a backstop
-for high-traffic stalls.
+ring). Gentle ring restarts that fail three times in a row escalate
+to a full QDMA TX DMA engine cycle (disable -> wait for busy to clear
+-> enable), the same sequence the teardown path uses; the escalation
+counter resets as soon as the TX MIB advances again. ndo_tx_timeout
+shares the same restart helper as a backstop for high-traffic stalls.
 
 Signed-off-by: zhangjianguo <janegle@gmail.com>
 ---
-
-Gentle ring restarts that fail three times in a row escalate to a full
-QDMA TX DMA engine cycle (disable -> wait for busy to clear -> enable),
-the same sequence the teardown path uses; the escalation counter resets
-as soon as the TX MIB advances again.
 --- a/drivers/net/ethernet/airoha/airoha_eth.h
 +++ b/drivers/net/ethernet/airoha/airoha_eth.h
 @@ -687,6 +687,10 @@
@@ -41,7 +39,16 @@ as soon as the TX MIB advances again.
  	struct phylink_config phylink_config;
 --- a/drivers/net/ethernet/airoha/airoha_eth.c
 +++ b/drivers/net/ethernet/airoha/airoha_eth.c
-@@ -2520,6 +2520,10 @@
+@@ -2498,6 +2498,8 @@
+ 			      FIELD_PREP(WAN_MTU0_MASK, netdev->mtu + VLAN_ETH_HLEN));
+ }
+ 
++static void airoha_tx_stall_check(struct work_struct *work);
++
+ static int airoha_dev_open(struct net_device *netdev)
+ {
+ 	struct airoha_gdm_dev *dev = netdev_priv(netdev);
+@@ -2520,6 +2522,10 @@
  		return -EBUSY;
  	}
  
@@ -52,7 +59,7 @@ as soon as the TX MIB advances again.
  	if ((dev->flags & AIROHA_PRIV_F_PON) &&
  	    (!dev->pon_link_ops || !dev->pon_link_priv)) {
  		/* PON GDM2 requires a registered line controller. */
-@@ -2607,6 +2611,7 @@
+@@ -2607,6 +2613,7 @@
  
  	netif_tx_disable(netdev);
  	netif_carrier_off(netdev);
@@ -60,7 +67,7 @@ as soon as the TX MIB advances again.
  	if ((dev->flags & AIROHA_PRIV_F_PON) && dev->pon_link_ops) {
  		/* Stop the PON controller before tearing down shared QDMA and NAPI. */
  		dev->pon_link_ops->stop(dev->pon_link_priv);
-@@ -4250,6 +4255,203 @@
+@@ -4250,6 +4257,203 @@
  	}
  }
  
@@ -264,7 +271,7 @@ as soon as the TX MIB advances again.
  static const struct net_device_ops airoha_netdev_ops = {
  	.ndo_init		= airoha_dev_init,
  	.ndo_open		= airoha_dev_open,
-@@ -4259,6 +4461,7 @@
+@@ -4259,6 +4463,7 @@
  	.ndo_fix_features	= airoha_dev_fix_features,
  	.ndo_set_features	= airoha_dev_set_features,
  	.ndo_start_xmit		= airoha_dev_xmit,
