@@ -100,9 +100,12 @@ jobs:
       - name: Download sources
         shell: bash
         run: |
-          # libcronet (naiveproxy) 的 git 源在 runner 上频繁失败，改走 gh-proxy 镜像
+          # libcronet：删除 PKG_MIRROR_HASH —— immortalwrt CDN 的 tarball 与
+          # Makefile 哈希不符，且哈希不符时 download.pl 不回退 git 源（实测
+          # #86/#89/#90-92 全部死于此）。移除镜像哈希后走 git 源（经 gh-proxy）。
           find feeds -path '*libcronet*' -name Makefile -exec sed -i \
-            's|https://github.com/SagerNet/naiveproxy.git|https://gh-proxy.org/https://github.com/SagerNet/naiveproxy.git|g' {} +
+            -e '/PKG_MIRROR_HASH/d' \
+            -e 's|https://github.com/SagerNet/naiveproxy.git|https://gh-proxy.org/https://github.com/SagerNet/naiveproxy.git|g' {} +
           for i in 1 2 3 4 5 6; do
             make download -j$(nproc) V=s 2>&1 | tee download.log
             if ! grep -qE "failed to build" download.log; then
