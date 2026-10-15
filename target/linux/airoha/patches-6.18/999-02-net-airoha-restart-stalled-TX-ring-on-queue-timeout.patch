@@ -21,14 +21,20 @@ for high-traffic stalls.
 
 Signed-off-by: zhangjianguo <janegle@gmail.com>
 ---
+
+Gentle ring restarts that fail three times in a row escalate to a full
+QDMA TX DMA engine cycle (disable -> wait for busy to clear -> enable),
+the same sequence the teardown path uses; the escalation counter resets
+as soon as the TX MIB advances again.
 --- a/drivers/net/ethernet/airoha/airoha_eth.h
 +++ b/drivers/net/ethernet/airoha/airoha_eth.h
-@@ -687,6 +687,9 @@
+@@ -687,6 +687,10 @@
  	struct airoha_pon_datapath_counters pon_stats;
  
  	struct airoha_hw_stats stats;
 +	u32 tx_stall_mib;
 +	u8 tx_stall_cycles;
++	u8 tx_restart_fails;
 +	struct delayed_work tx_stall_work;
  
  	struct phylink *phylink;
@@ -54,7 +60,7 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  	if ((dev->flags & AIROHA_PRIV_F_PON) && dev->pon_link_ops) {
  		/* Stop the PON controller before tearing down shared QDMA and NAPI. */
  		dev->pon_link_ops->stop(dev->pon_link_priv);
-@@ -4250,6 +4255,175 @@
+@@ -4250,6 +4255,203 @@
  	}
  }
  
@@ -213,11 +219,39 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
 +		if (busy && mib == dev->tx_stall_mib) {
 +			if (++dev->tx_stall_cycles >= 2) {
 +				dev->tx_stall_cycles = 0;
++
++				/* Gentle ring restarts failing repeatedly means the TX
++				 * engine itself is wedged: cycle the QDMA TX DMA engine
++				 * (the same disable/wait/enable sequence the teardown
++				 * path uses) before re-arming the ring.
++				 */
++				if (++dev->tx_restart_fails >= 3) {
++					u32 status;
++
++					airoha_qdma_clear(qdma, REG_QDMA_GLOBAL_CFG,
++							  GLOBAL_CFG_TX_DMA_EN_MASK);
++					if (read_poll_timeout(airoha_qdma_rr, status,
++							      !(status & GLOBAL_CFG_TX_DMA_BUSY_MASK),
++							      USEC_PER_MSEC, 50 * USEC_PER_MSEC,
++							      true, qdma,
++							      REG_QDMA_GLOBAL_CFG))
++						dev_warn(eth->dev,
++							 "QDMA TX DMA busy timeout\n");
++					airoha_qdma_set(qdma, REG_QDMA_GLOBAL_CFG,
++							GLOBAL_CFG_TX_DMA_EN_MASK);
++					netdev_err(netdev,
++						   "TX MIB stalled %u times, cycling TX DMA engine\n",
++						   dev->tx_restart_fails);
++					dev->tx_restart_fails = 0;
++				}
++
 +				airoha_dev_tx_restart_ring(netdev, busy_q,
 +							   "TX MIB stalled");
 +			}
 +		} else {
 +			dev->tx_stall_cycles = 0;
++			if (mib != dev->tx_stall_mib)
++				dev->tx_restart_fails = 0;
 +		}
 +		dev->tx_stall_mib = mib;
 +	} else {
@@ -230,7 +264,7 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  static const struct net_device_ops airoha_netdev_ops = {
  	.ndo_init		= airoha_dev_init,
  	.ndo_open		= airoha_dev_open,
-@@ -4259,6 +4433,7 @@
+@@ -4259,6 +4461,7 @@
  	.ndo_fix_features	= airoha_dev_fix_features,
  	.ndo_set_features	= airoha_dev_set_features,
  	.ndo_start_xmit		= airoha_dev_xmit,
