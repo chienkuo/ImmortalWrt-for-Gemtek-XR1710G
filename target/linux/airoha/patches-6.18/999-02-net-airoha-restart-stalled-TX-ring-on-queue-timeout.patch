@@ -1,30 +1,66 @@
 From: zhangjianguo <janegle@gmail.com>
-Subject: [PATCH] net: airoha: restart stalled TX ring on queue timeout
+Subject: [PATCH] net: airoha: detect wedged TX engine via MIB and restart the ring
 
 A stuck QDMA TX engine on the external SerDes port (XR1710G lan2)
 leaves the GDM TX MIB frozen while the RX direction keeps working:
 after a link flap and recovery the hardware stops consuming TX
 descriptors, the shared QDMA ring is never re-initialized by
 ndo_stop/ndo_open (shared-port teardown skips the cleanup), and only a
-full reboot recovers the port.
+full reboot recovers the port. The netdev TX watchdog does not help:
+the ring only fills under sustained traffic, so the queue never stops
+and ndo_tx_timeout never fires at idle rates.
 
-The driver arms the TX watchdog (netdev->watchdog_timeo = 5 * HZ) but
-registers no ndo_tx_timeout handler. Add one: on timeout, drain the
-in-flight descriptors of the affected ring (unmap, free skbs, restore
-BQL accounting), reset the descriptors to the boot-time init state,
-re-arm REG_TX_CPU_IDX/REG_TX_DMA_IDX, clear the flushing latch and wake
-every netdev queue mapped to the ring (shared QDMA).
+Add a rate-independent detector: a 5 s periodic check per device
+compares the hardware GDM TX MIB (REG_FE_GDM_TX_OK_PKT_CNT_L) against
+its previous value while the ring holds queued descriptors; two
+consecutive stalls trigger a ring restart (drain in-flight descriptors,
+restore BQL accounting, re-arm REG_TX_CPU_IDX/REG_TX_DMA_IDX, clear
+the flushing latch, wake every netdev queue mapped to the shared
+ring). ndo_tx_timeout now shares the same restart helper as a backstop
+for high-traffic stalls.
 
 Signed-off-by: zhangjianguo <janegle@gmail.com>
 ---
+--- a/drivers/net/ethernet/airoha/airoha_eth.h
++++ b/drivers/net/ethernet/airoha/airoha_eth.h
+@@ -687,6 +687,9 @@
+ 	struct airoha_pon_datapath_counters pon_stats;
+ 
+ 	struct airoha_hw_stats stats;
++	u32 tx_stall_mib;
++	u8 tx_stall_cycles;
++	struct delayed_work tx_stall_work;
+ 
+ 	struct phylink *phylink;
+ 	struct phylink_config phylink_config;
 --- a/drivers/net/ethernet/airoha/airoha_eth.c
 +++ b/drivers/net/ethernet/airoha/airoha_eth.c
-@@ -4250,6 +4250,107 @@
+@@ -2520,6 +2520,10 @@
+ 		return -EBUSY;
+ 	}
+ 
++	INIT_DELAYED_WORK(&dev->tx_stall_work,
++			  airoha_tx_stall_check);
++	schedule_delayed_work(&dev->tx_stall_work, 5 * HZ);
++
+ 	if ((dev->flags & AIROHA_PRIV_F_PON) &&
+ 	    (!dev->pon_link_ops || !dev->pon_link_priv)) {
+ 		/* PON GDM2 requires a registered line controller. */
+@@ -2607,6 +2611,7 @@
+ 
+ 	netif_tx_disable(netdev);
+ 	netif_carrier_off(netdev);
++	cancel_delayed_work_sync(&dev->tx_stall_work);
+ 	if ((dev->flags & AIROHA_PRIV_F_PON) && dev->pon_link_ops) {
+ 		/* Stop the PON controller before tearing down shared QDMA and NAPI. */
+ 		dev->pon_link_ops->stop(dev->pon_link_priv);
+@@ -4250,6 +4255,175 @@
  	}
  }
  
-+static void airoha_dev_tx_timeout(struct net_device *netdev,
-+				    unsigned int txqueue)
++static void airoha_dev_tx_restart_ring(struct net_device *netdev,
++					unsigned int txqueue,
++					const char *reason)
 +{
 +	struct airoha_gdm_dev *dev = netdev_priv(netdev);
 +	struct airoha_eth *eth = dev->eth;
@@ -43,8 +79,8 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
 +	q = &qdma->q_tx[qid];
 +	rcu_read_unlock();
 +
-+	netdev_err(netdev, "TX queue %u (QDMA q%u) timed out, restarting ring\n",
-+		   txqueue, qid);
++	netdev_err(netdev, "%s (txqueue %u, QDMA q%u), restarting ring\n",
++		   reason, txqueue, qid);
 +
 +	/* Drain the in-flight descriptors and re-sync the ring, mirroring the
 +	 * boot-time airoha_qdma_init_tx_queue() sequence. A stuck QDMA TX
@@ -105,7 +141,7 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
 +		for (d = 0; d < ARRAY_SIZE(port->devs); d++) {
 +			struct airoha_gdm_dev *g = port->devs[d];
 +			struct net_device *nd;
-+			int j;
++			int k;
 +
 +			if (!g)
 +				continue;
@@ -114,20 +150,87 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
 +				continue;
 +
 +			nd = netdev_from_priv(g);
-+			for (j = 0; j < nd->num_tx_queues; j++) {
-+				if (airoha_qdma_get_txq(qdma, j) != qid)
++			for (k = 0; k < nd->num_tx_queues; k++) {
++				if (airoha_qdma_get_txq(qdma, k) != qid)
 +					continue;
 +
-+				netif_wake_subqueue(nd, j);
++				netif_wake_subqueue(nd, k);
 +			}
 +		}
 +	}
 +}
 +
++static void airoha_dev_tx_timeout(struct net_device *netdev,
++				  unsigned int txqueue)
++{
++	airoha_dev_tx_restart_ring(netdev, txqueue, "TX queue timeout");
++}
++
++/* Periodic stall detector: the TX watchdog only fires once the ring fills
++ * and the queue stops, which can take hours at idle traffic rates. A
++ * wedged QDMA TX engine silently drops everything instead, so track the
++ * hardware truth directly: if the ring holds frames but the GDM TX MIB
++ * does not advance for two consecutive 5 s checks, restart the ring.
++ */
++static void airoha_tx_stall_check(struct work_struct *work)
++{
++	struct airoha_gdm_dev *dev = container_of(work, struct airoha_gdm_dev,
++						 tx_stall_work.work);
++	struct net_device *netdev = netdev_from_priv(dev);
++	struct airoha_gdm_port *port = dev->port;
++	struct airoha_eth *eth = dev->eth;
++	struct airoha_qdma *qdma;
++	unsigned int busy_q = 0;
++	u32 mib;
++	bool busy = false;
++	int j;
++
++	if (netif_running(netdev) && netif_carrier_ok(netdev)) {
++		rcu_read_lock();
++		qdma = rcu_dereference(dev->qdma);
++		if (qdma) {
++			for (j = 0; j < netdev->num_tx_queues; j++) {
++				u16 qid = airoha_qdma_get_txq(qdma, j);
++
++				if (qdma->q_tx[qid].queued > 0) {
++					busy = true;
++					busy_q = j;
++					break;
++				}
++			}
++		}
++		rcu_read_unlock();
++
++		spin_lock(&port->lock);
++		if (port->id == AIROHA_GDM3_IDX || port->id == AIROHA_GDM4_IDX)
++			airoha_fe_rmw(eth, REG_FE_GDM_MIB_CFG(port->id),
++				      FE_TX_MIB_ID_MASK | FE_RX_MIB_ID_MASK,
++				      FIELD_PREP(FE_TX_MIB_ID_MASK, dev->nbq) |
++				      FIELD_PREP(FE_RX_MIB_ID_MASK, dev->nbq));
++		mib = airoha_fe_rr(eth, REG_FE_GDM_TX_OK_PKT_CNT_L(port->id));
++		spin_unlock(&port->lock);
++
++		if (busy && mib == dev->tx_stall_mib) {
++			if (++dev->tx_stall_cycles >= 2) {
++				dev->tx_stall_cycles = 0;
++				airoha_dev_tx_restart_ring(netdev, busy_q,
++							   "TX MIB stalled");
++			}
++		} else {
++			dev->tx_stall_cycles = 0;
++		}
++		dev->tx_stall_mib = mib;
++	} else {
++		dev->tx_stall_cycles = 0;
++	}
++
++	schedule_delayed_work(&dev->tx_stall_work, 5 * HZ);
++}
++
  static const struct net_device_ops airoha_netdev_ops = {
  	.ndo_init		= airoha_dev_init,
  	.ndo_open		= airoha_dev_open,
-@@ -4259,6 +4360,7 @@
+@@ -4259,6 +4433,7 @@
  	.ndo_fix_features	= airoha_dev_fix_features,
  	.ndo_set_features	= airoha_dev_set_features,
  	.ndo_start_xmit		= airoha_dev_xmit,
