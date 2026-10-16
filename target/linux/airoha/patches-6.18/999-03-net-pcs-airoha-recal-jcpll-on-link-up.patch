@@ -1,0 +1,29 @@
+From: zhangjianguo <janegle@gmail.com>
+Subject: [PATCH] net: pcs: airoha: recalibrate JCPLL VCO on every USXGMII link-up
+
+The host-side lane fails to re-lock after copper re-AN events: the
+link comes up for ~1 s and then drops, and the in-driver recovery
+loop only re-runs pcs_config (which performs the JCPLL recal) about
+91 s later. Recalibrating the JCPLL VCO in the pcs link-up callback
+makes the lane re-lock immediately on every USXGMII link-up.
+
+Signed-off-by: zhangjianguo <janegle@gmail.com>
+---
+--- a/drivers/net/pcs/airoha/pcs-airoha-common.c
++++ b/drivers/net/pcs/airoha/pcs-airoha-common.c
+@@ -998,6 +998,15 @@
+ 	maps = &priv->maps[port->index];
+ 	data = priv->data;
+ 
++	/* Prevention: the host-side lane fails to re-lock after copper
++	 * re-AN events (link comes up for ~1 s then drops) and the
++	 * recovery loop only re-runs pcs_config ~91 s later. Recalibrate
++	 * the JCPLL VCO on every USXGMII link-up so the lane re-locks
++	 * immediately instead.
++	 */
++	if (interface == PHY_INTERFACE_MODE_USXGMII)
++		an7581_pcs_jcpll_recal(priv, port->index, interface);
++
+ 	if (neg_mode == PHYLINK_PCS_NEG_INBAND_ENABLED &&
+ 	    interface == PHY_INTERFACE_MODE_SGMII) {
+ 		regmap_update_bits(maps->hsgmii_rate_adp,
