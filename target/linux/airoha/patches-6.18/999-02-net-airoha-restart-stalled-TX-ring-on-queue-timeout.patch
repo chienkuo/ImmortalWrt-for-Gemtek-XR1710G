@@ -1,36 +1,34 @@
 From: zhangjianguo <janegle@gmail.com>
-Subject: [PATCH] net: airoha: detect wedged TX engine via MIB and restart the ring
+Subject: [PATCH] net: airoha: detect wedged TX engine via submits-vs-MIB and restart
 
-A stuck QDMA TX engine on the external SerDes port (XR1710G lan2)
-leaves the GDM TX MIB frozen while the RX direction keeps working:
-after a link flap and recovery the hardware stops consuming TX
-descriptors, the shared QDMA ring is never re-initialized by
-ndo_stop/ndo_open (shared-port teardown skips the cleanup), and only a
-full reboot recovers the port. The netdev TX watchdog does not help:
-the ring only fills under sustained traffic, so the queue never stops
-and ndo_tx_timeout never fires at idle rates.
+A stuck TX engine on the external SerDes port (XR1710G lan2) leaves
+the GDM TX MIB frozen while the stack keeps handing frames to the
+driver: the QDMA completion path drains the ring normally (BQL
+inflight stays 0), so neither the netdev TX watchdog nor a ring
+occupancy check can detect the stall - the frames die silently between
+the QDMA and the GDM.
 
-Add a rate-independent detector: a 5 s periodic check per device
-compares the hardware GDM TX MIB (REG_FE_GDM_TX_OK_PKT_CNT_L) against
-its previous value while the ring holds queued descriptors; two
-consecutive stalls trigger a ring restart (drain in-flight descriptors,
-restore BQL accounting, re-arm REG_TX_CPU_IDX/REG_TX_DMA_IDX, clear
-the flushing latch, wake every netdev queue mapped to the shared
-ring). Gentle ring restarts that fail three times in a row escalate
-to a full QDMA TX DMA engine cycle (disable -> wait for busy to clear
--> enable), the same sequence the teardown path uses; the escalation
-counter resets as soon as the TX MIB advances again. ndo_tx_timeout
-shares the same restart helper as a backstop for high-traffic stalls.
+Track the software truth instead: a per-device submit counter
+incremented in the xmit success path. A 5 s periodic check declares a
+stall when submits advance for two consecutive checks while the
+hardware TX MIB does not. On detection, cycle the QDMA TX DMA engine
+(disable/wait/enable, the teardown sequence) and re-arm the ring; on
+repeated failures also pulse the FE core and GDM3/GDM4 MBI arbiter
+reset (the boot-time init sequence). The failure counter resets as
+soon as the MIB advances again. ndo_tx_timeout shares the same ring
+restart helper as a backstop.
 
 Signed-off-by: zhangjianguo <janegle@gmail.com>
 ---
 --- a/drivers/net/ethernet/airoha/airoha_eth.h
 +++ b/drivers/net/ethernet/airoha/airoha_eth.h
-@@ -687,6 +687,10 @@
+@@ -687,6 +687,12 @@
  	struct airoha_pon_datapath_counters pon_stats;
  
  	struct airoha_hw_stats stats;
 +	u32 tx_stall_mib;
++	u64 tx_submit_count;
++	u64 tx_submit_last;
 +	u8 tx_stall_cycles;
 +	u8 tx_restart_fails;
 +	struct delayed_work tx_stall_work;
@@ -67,7 +65,16 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  	if ((dev->flags & AIROHA_PRIV_F_PON) && dev->pon_link_ops) {
  		/* Stop the PON controller before tearing down shared QDMA and NAPI. */
  		dev->pon_link_ops->stop(dev->pon_link_priv);
-@@ -4250,6 +4257,203 @@
+@@ -3236,6 +3243,8 @@
+ 		e->dma_type = AIROHA_DMA_MAP_PAGE;
+ 	}
+ 	q->queued += i;
++	WRITE_ONCE(dev->tx_submit_count,
++		    dev->tx_submit_count + 1);
+ 	if (pon_data) {
+ 		u8 channel = FIELD_GET(QDMA_ETH_TXMSG_CHAN_MASK, msg0);
+ 
+@@ -4250,6 +4259,212 @@
  	}
  }
  
@@ -193,26 +200,16 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
 +	struct airoha_gdm_port *port = dev->port;
 +	struct airoha_eth *eth = dev->eth;
 +	struct airoha_qdma *qdma;
-+	unsigned int busy_q = 0;
 +	u32 mib;
-+	bool busy = false;
-+	int j;
 +
 +	if (netif_running(netdev) && netif_carrier_ok(netdev)) {
++		u64 submits = READ_ONCE(dev->tx_submit_count);
++
 +		rcu_read_lock();
 +		qdma = rcu_dereference(dev->qdma);
-+		if (qdma) {
-+			for (j = 0; j < netdev->num_tx_queues; j++) {
-+				u16 qid = airoha_qdma_get_txq(qdma, j);
-+
-+				if (qdma->q_tx[qid].queued > 0) {
-+					busy = true;
-+					busy_q = j;
-+					break;
-+				}
-+			}
-+		}
 +		rcu_read_unlock();
++		if (WARN_ON(!qdma))
++			goto resched;
 +
 +		spin_lock(&port->lock);
 +		if (port->id == AIROHA_GDM3_IDX || port->id == AIROHA_GDM4_IDX)
@@ -223,16 +220,24 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
 +		mib = airoha_fe_rr(eth, REG_FE_GDM_TX_OK_PKT_CNT_L(port->id));
 +		spin_unlock(&port->lock);
 +
-+		if (busy && mib == dev->tx_stall_mib) {
++		/* Stall signature: the stack keeps submitting frames (the QDMA
++		 * completion path drains the ring, inflight stays 0) while the
++		 * GDM TX MIB does not advance - the frames die between the
++		 * QDMA and the GDM. Ring occupancy cannot detect this (the
++		 * ring is empty), so compare submits against the MIB directly.
++		 */
++		if (submits != dev->tx_submit_last &&
++		    mib == dev->tx_stall_mib) {
 +			if (++dev->tx_stall_cycles >= 2) {
 +				dev->tx_stall_cycles = 0;
++				dev->tx_restart_fails++;
 +
-+				/* Gentle ring restarts failing repeatedly means the TX
-+				 * engine itself is wedged: cycle the QDMA TX DMA engine
-+				 * (the same disable/wait/enable sequence the teardown
-+				 * path uses) before re-arming the ring.
++				/* Cycle the QDMA TX DMA engine (disable/wait/enable,
++				 * the teardown sequence). On repeated failures also
++				 * pulse the FE core and GDM3/GDM4 MBI arbiter reset,
++				 * mirroring the boot-time init sequence.
 +				 */
-+				if (++dev->tx_restart_fails >= 3) {
++				{
 +					u32 status;
 +
 +					airoha_qdma_clear(qdma, REG_QDMA_GLOBAL_CFG,
@@ -246,24 +251,35 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
 +							 "QDMA TX DMA busy timeout\n");
 +					airoha_qdma_set(qdma, REG_QDMA_GLOBAL_CFG,
 +							GLOBAL_CFG_TX_DMA_EN_MASK);
-+					netdev_err(netdev,
-+						   "TX MIB stalled %u times, cycling TX DMA engine\n",
-+						   dev->tx_restart_fails);
-+					dev->tx_restart_fails = 0;
 +				}
 +
-+				airoha_dev_tx_restart_ring(netdev, busy_q,
++				if (dev->tx_restart_fails >= 2) {
++					airoha_fe_wr(eth, REG_FE_RST_GLO_CFG,
++						     FE_RST_CORE_MASK |
++						     FE_RST_GDM3_MBI_ARB_MASK |
++						     FE_RST_GDM4_MBI_ARB_MASK);
++					usleep_range(1000, 2000);
++				}
++
++				netdev_err(netdev,
++					   "TX MIB stalled (attempt %u), restarting TX engine\n",
++					   dev->tx_restart_fails);
++
++				airoha_dev_tx_restart_ring(netdev, 0,
 +							   "TX MIB stalled");
 +			}
 +		} else {
 +			dev->tx_stall_cycles = 0;
-+			if (mib != dev->tx_stall_mib)
-+				dev->tx_restart_fails = 0;
 +		}
++		if (mib != dev->tx_stall_mib)
++			dev->tx_restart_fails = 0;
++		dev->tx_submit_last = submits;
 +		dev->tx_stall_mib = mib;
 +	} else {
 +		dev->tx_stall_cycles = 0;
 +	}
++
++resched:
 +
 +	schedule_delayed_work(&dev->tx_stall_work, 5 * HZ);
 +}
@@ -271,7 +287,7 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  static const struct net_device_ops airoha_netdev_ops = {
  	.ndo_init		= airoha_dev_init,
  	.ndo_open		= airoha_dev_open,
-@@ -4259,6 +4463,7 @@
+@@ -4259,6 +4474,7 @@
  	.ndo_fix_features	= airoha_dev_fix_features,
  	.ndo_set_features	= airoha_dev_set_features,
  	.ndo_start_xmit		= airoha_dev_xmit,
