@@ -1,0 +1,10 @@
+#!/bin/sh
+# 端口交换（用户实测方案固化）：lan4（GSW 1G 口）承担 WAN/PPPoE；
+# 原 wan（gdm2 10G 口）加入 br-lan 作为局域网口。带幂等保护。
+[ "$(uci -q get network.wan.device)" = "lan4" ] && exit 0
+
+uci set network.wan.device='lan4'
+uci del_list network.@device[0].ports='lan4'
+uci add_list network.@device[0].ports='wan'
+uci commit network
+exit 0
