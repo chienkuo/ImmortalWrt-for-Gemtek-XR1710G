@@ -1,0 +1,44 @@
+From: zhangjianguo <janegle@gmail.com>
+Date: Sun, 18 Oct 2026 12:20:00 +0800
+Subject: [PATCH] wifi: mt76: mt7996: validate WCID index before WTBL lookup
+
+The mt7996 driver does not validate WCID indices from TX free events
+and TX status reports before WTBL lookups. An out-of-range WCID causes
+invalid MMIO accesses. On the Airoha NPU RX path this is observed as a
+WARNING in mt7996_mac_wtbl_lmac_addr via mt7996_mac_add_txs and can
+degrade Wi-Fi traffic.
+
+Add bounds checks against mt7996_wtbl_size() in mt7996_mac_tx_free()
+and mt7996_mac_add_txs(), matching the fix posted upstream by Joshua
+Klinesmith.
+
+Signed-off-by: zhangjianguo <janegle@gmail.com>
+---
+ mt7996/mac.c | 6 ++++++
+
+diff --git a/mt7996/mac.c b/mt7996/mac.c
+--- a/mt7996/mac.c
++++ b/mt7996/mac.c
+@@ -1397,6 +1397,9 @@
+ 			u16 idx;
+ 
+ 			idx = FIELD_GET(MT_TXFREE_INFO_WLAN_ID, info);
++			if (idx >= mt7996_wtbl_size(dev))
++				goto next;
++
+ 			wcid = mt76_wcid_ptr(dev, idx);
+ 			sta = wcid_to_sta(wcid);
+ 			if (!sta) {
+@@ -1634,6 +1637,9 @@
+ 	u8 pid;
+ 
+ 	wcidx = le32_get_bits(txs_data[2], MT_TXS2_WCID);
++	if (wcidx >= mt7996_wtbl_size(dev))
++		return;
++
+ 	pid = le32_get_bits(txs_data[3], MT_TXS3_PID);
+ 
+ 	if (pid < MT_PACKET_ID_NO_SKB)
+
+-- 
+2.51.0

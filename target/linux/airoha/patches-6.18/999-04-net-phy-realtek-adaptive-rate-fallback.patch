@@ -2,10 +2,12 @@ From: zhangjianguo <janegle@gmail.com>
 Subject: [PATCH] net: phy: realtek: adaptive rate fallback when 10G cannot hold
 
 Keep 10G advertised, but when the link repeatedly fails to hold after
-a recovery (a new wedge episode starts within 30 s of the previous
-carrier recovery, twice in a row), step the copper AN advertising down
-10G -> 5G -> 2.5G -> 1G and restart AN. The failed-hold counter resets
-on a successful hold; a reboot restores the full advertisement.
+a recovery, step the copper AN advertising down 10G -> 5G -> 2.5G -> 1G
+and restart AN. Only wedge episodes starting 5-30 s after a carrier
+recovery count as a failed hold: earlier episodes are initial
+negotiation churn (boot, re-AN) and are ignored. The failed-hold
+counter resets on a successful hold; a reboot restores the full
+advertisement.
 
 Signed-off-by: zhangjianguo <janegle@gmail.com>
 ---
@@ -61,7 +63,7 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  static int rtl826x_read_status(struct phy_device *phydev)
  {
  	struct rtl826x_priv *priv = phydev->priv;
-@@ -3840,8 +3871,16 @@
+@@ -3840,8 +3871,21 @@
  	 * PCS/USXGMII lane; a phylink restart (pcs_config -> JCPLL VCO
  	 * recal) does.
  	 */
@@ -70,7 +72,12 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  		priv->rtk_pulse_start_ts = jiffies;
 +		if (priv->rtk_hold_ts &&
 +		    time_before(jiffies, priv->rtk_hold_ts + 30 * HZ)) {
-+			if (++priv->rtk_failed_holds >= 2)
++			/* Episodes starting within 5 s of the recovery are
++			 * initial negotiation churn (boot, re-AN), not a
++			 * failed hold.
++			 */
++			if (!time_before(jiffies, priv->rtk_hold_ts + 5 * HZ) &&
++			    ++priv->rtk_failed_holds >= 2)
 +				rtl826x_step_down_rate(phydev);
 +		} else {
 +			priv->rtk_failed_holds = 1;
@@ -79,7 +86,7 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  	else if (!priv->rtk_serdes_pulse_count)
  		priv->rtk_pulse_start_ts = 0;
  
-@@ -3919,6 +3958,7 @@
+@@ -3919,6 +3963,7 @@
  				    "RTK SerDes carrier recovered after %u flow_s pulse(s)\n",
  				    priv->rtk_serdes_pulse_count);
  			priv->rtk_pulse_start_ts = 0;
