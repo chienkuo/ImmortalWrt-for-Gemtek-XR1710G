@@ -1,5 +1,5 @@
 From: zhangjianguo <janegle@gmail.com>
-Subject: [PATCH] net: phy: realtek: adaptive rate fallback when 10G cannot hold
+Subject: [PATCH] net: phy: realtek: adaptive rate fallback for the lan2 port only
 
 Keep 10G advertised, but when the link repeatedly fails to hold after
 a recovery, step the copper AN advertising down 10G -> 5G -> 2.5G -> 1G
@@ -8,6 +8,9 @@ recovery count as a failed hold: earlier episodes are initial
 negotiation churn (boot, re-AN) and are ignored. The failed-hold
 counter resets on a successful hold; a reboot restores the full
 advertisement.
+
+Restrict the fallback to the lan2 port (mdio address 5): the wan port
+shares this driver and must not be rate-stepped or re-AN'd.
 
 Signed-off-by: zhangjianguo <janegle@gmail.com>
 ---
@@ -25,7 +28,7 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  	bool patch_rtk_serdes:1;
 --- a/drivers/net/phy/realtek/realtek_main.c
 +++ b/drivers/net/phy/realtek/realtek_main.c
-@@ -3792,6 +3792,37 @@
+@@ -3792,6 +3792,44 @@
  	schedule_delayed_work(&priv->lane_restart_work, msecs_to_jiffies(200));
  }
  
@@ -45,6 +48,13 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
 +	};
 +	int i;
 +
++	/* lan2 (mdio address 5) only: the wan port shares this driver,
++	 * and stepping its rate down or restarting its AN flaps the
++	 * PPPoE link.
++	 */
++	if (phydev->mdio.addr != 5)
++		return;
++
 +	if (priv->rtk_rate_step >= ARRAY_SIZE(steps) - 1)
 +		return;
 +
@@ -63,7 +73,7 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  static int rtl826x_read_status(struct phy_device *phydev)
  {
  	struct rtl826x_priv *priv = phydev->priv;
-@@ -3840,8 +3871,21 @@
+@@ -3840,8 +3878,21 @@
  	 * PCS/USXGMII lane; a phylink restart (pcs_config -> JCPLL VCO
  	 * recal) does.
  	 */
@@ -86,7 +96,7 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  	else if (!priv->rtk_serdes_pulse_count)
  		priv->rtk_pulse_start_ts = 0;
  
-@@ -3919,6 +3963,7 @@
+@@ -3919,6 +3970,7 @@
  				    "RTK SerDes carrier recovered after %u flow_s pulse(s)\n",
  				    priv->rtk_serdes_pulse_count);
  			priv->rtk_pulse_start_ts = 0;
