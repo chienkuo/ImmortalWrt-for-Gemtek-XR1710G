@@ -1,0 +1,72 @@
+From: zhangjianguo <janegle@gmail.com>
+Subject: [PATCH] net: pcs: airoha: skip AN7581 global reset on same-speed relink
+
+Patch 621 added a global PCS digital reset to an7581_pcs_phya_link_up() so
+that a speed change inside the same USXGMII interface re-initialises the
+RX data path (only link_up() runs in that case, not pcs_config()). It
+skips the reset only for the first link_up after bringup, using the
+needs_full_init flag, and therefore runs it on every later link_up -
+including a plain cable replug at an unchanged speed.
+
+On the XR1710G that reset destroys a freshly negotiated link: after a
+replug the MAC reports "Link is Up - 10Gbps/Full" and the link collapses
+again 0.5-0.7 s later, then never recovers; the same port carries traffic
+for hours when the link comes up right after bringup. Measured on both
+10G PHYs (lan2, wan): first plug after boot works, every replug fails.
+
+Only a real speed change needs the data path re-initialised. Track the
+speed seen by airoha_pcs_link_up() in the port and skip the global reset
+when it is unchanged, keeping the reset for speed changes.
+
+Signed-off-by: zhangjianguo <janegle@gmail.com>
+---
+--- a/drivers/net/pcs/airoha/pcs-airoha.h
++++ b/drivers/net/pcs/airoha/pcs-airoha.h
+@@ -1698,6 +1698,8 @@
+ 	struct airoha_pcs_priv *priv;
+ 	phy_interface_t interface;
+ 	int index;
++	int speed;
++	bool speed_changed;
+ 
+ 	struct phylink_pcs pcs;
+ };
+--- a/drivers/net/pcs/airoha/pcs-airoha-common.c
++++ b/drivers/net/pcs/airoha/pcs-airoha-common.c
+@@ -998,6 +998,13 @@
+ 	maps = &priv->maps[port->index];
+ 	data = priv->data;
+ 
++	/* Remember whether this link-up follows a real speed change: only
++	 * then does the data path need re-initialising. A cable replug at the
++	 * same speed leaves the PCS/rate-adapt configuration untouched.
++	 */
++	port->speed_changed = port->speed != speed;
++	port->speed = speed;
++
+ 	if (neg_mode == PHYLINK_PCS_NEG_INBAND_ENABLED &&
+ 	    interface == PHY_INTERFACE_MODE_SGMII) {
+ 		regmap_update_bits(maps->hsgmii_rate_adp,
+--- a/drivers/net/pcs/airoha/pcs-an7581.c
++++ b/drivers/net/pcs/airoha/pcs-an7581.c
+@@ -3471,6 +3471,20 @@
+ 			return;
+ 		}
+ 
++		/* The global digital reset below is required when the speed
++		 * changes but it must not run on a plain cable replug: on the
++		 * XR1710G it tears down the just-negotiated in-band link about
++		 * half a second after it comes up, so the port never carries
++		 * traffic again until the netdev is bounced. The same reset
++		 * right after bringup is harmless, which is why only the
++		 * replug path fails. Replugging at an unchanged speed leaves
++		 * the rate adaptation and data path exactly as they were.
++		 */
++		if (!priv->ports[index].speed_changed) {
++			dev_dbg(priv->dev, "link_up: speed unchanged, skipping global reset\n");
++			return;
++		}
++
+ 		dev_dbg(priv->dev, "link_up: performing global digital reset\n");
+ 		an7581_pcs_cdr_reset(priv, index, priv->ports[index].interface, false);
+ 
