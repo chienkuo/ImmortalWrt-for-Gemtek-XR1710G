@@ -1,0 +1,311 @@
+From: zhangjianguo <janegle@gmail.com>
+Subject: [PATCH] net: airoha: fix PPE flow statistics visibility
+
+On AN7581 (Gemtek XR1710G), /sys/kernel/debug/ppe/entries reports 800+
+IPv4, IPv6 and L2B entries with packets=0 bytes=0 while conntrack shows
+19-24 [HW_OFFLOAD] flows and /sys/kernel/debug/ppe/bind contains a BND
+bidirectional entry for a 475 Mbps IPv6 flow. Acceleration works but the
+counters are invisible.
+
+The target config kept CONFIG_NET_AIROHA_FLOW_STATS disabled, so
+airoha_ppe_get_num_stats_entries() returned -EOPNOTSUPP and the read path
+bailed out before touching the counters. That symbol lives outside the
+kernel source tree, so the config change is provided separately. With the
+config enabled, three driver problems still hide the counters:
+
+1. Native AN7581 L2B entries have no verified NPU counter slot. The
+   existing commit/read skips stay, but returning zero made unavailable
+   counters look like a real idle flow. Expose whether an entry has a
+   counter slot and report n/a when it has none.
+
+2. airoha_ppe_foe_get_flow_stats_index() derived the counter index by
+   subtracting a fixed constant and callers silently dropped any index
+   beyond the table. DRAM hashes and hashes in the per-PPE counter half
+   therefore produced packets=0. Derive the index from the PPE id and the
+   per-PPE SRAM entry instead, reject hashes without a slot and log them
+   at debug level.
+
+3. The NPU flow-stats handshake was fatal: if the firmware rejected
+   PPE_FUNC_SET_WAIT_FLOW_STATS_SETUP, the whole PPE setup failed and
+   hardware offload was lost. Treat it as optional, warn and continue;
+   only reserve the SRAM counter half when the handshake succeeded, and
+   make every counter access tolerate a missing NPU mapping.
+
+Also log the configured state at probe and the runtime state after the
+NPU handshake, so that dmesg | grep -i "flow stats" shows whether the
+counters are really active. The 64-bit value is still assembled as
+ppe->foe_stats[index] (upper 32 bits) << 32 | npu_stats (lower 32 bits).
+
+How to verify:
+  dmesg | grep -i "flow stats"
+  cat /sys/kernel/debug/ppe/config   # flow_stats_available: 1
+  cat /sys/kernel/debug/ppe/entries  # IPv4/IPv6 show real counters,
+                                     # L2B/DRAM entries show n/a
+Signed-off-by: zhangjianguo <janegle@gmail.com>
+---
+
+--- a/drivers/net/ethernet/airoha/airoha_eth.h
++++ b/drivers/net/ethernet/airoha/airoha_eth.h
+@@ -722,6 +722,8 @@
+ 
+ 	struct airoha_foe_stats *foe_stats;
+ 	dma_addr_t foe_stats_dma;
++	/* NPU accepted the flow stats handshake and the counters are mapped. */
++	bool stats_available;
+ 
+ 	struct dentry *debugfs_dir;
+ };
+@@ -859,6 +861,7 @@
+ 						  u32 hash);
+ void airoha_ppe_foe_entry_get_stats(struct airoha_ppe *ppe, u32 hash,
+ 				    struct airoha_foe_stats64 *stats);
++bool airoha_ppe_foe_entry_stats_available(struct airoha_ppe *ppe, u32 hash);
+ 
+ #ifdef CONFIG_DEBUG_FS
+ int airoha_ppe_debugfs_init(struct airoha_ppe *ppe);
+--- a/drivers/net/ethernet/airoha/airoha_ppe.c
++++ b/drivers/net/ethernet/airoha/airoha_ppe.c
+@@ -150,7 +150,9 @@
+ 	sram_tb_size = sram_num_entries * sizeof(struct airoha_foe_entry);
+ 	dram_num_entries = PPE_RAM_NUM_ENTRIES_SHIFT(PPE_DRAM_NUM_ENTRIES);
+ 
+-	sram_num_stats_entries = airoha_ppe_get_num_stats_entries(ppe);
++	sram_num_stats_entries = -EOPNOTSUPP;
++	if (ppe->stats_available)
++		sram_num_stats_entries = airoha_ppe_get_num_stats_entries(ppe);
+ 	if (sram_num_stats_entries > 0)
+ 		sram_ppe_num_data_entries -= sram_num_stats_entries;
+ 	sram_ppe_num_data_entries =
+@@ -708,22 +710,86 @@
+ static int airoha_ppe_foe_get_flow_stats_index(struct airoha_ppe *ppe,
+ 					       u32 hash, u32 *index)
+ {
++	struct airoha_eth *eth = ppe->eth;
++	u32 sram_num_entries, ppe_id, entry;
+ 	int ppe_num_stats_entries;
+ 
+ 	ppe_num_stats_entries = airoha_ppe_get_total_num_stats_entries(ppe);
+ 	if (ppe_num_stats_entries < 0)
+ 		return ppe_num_stats_entries;
+ 
+-	*index = hash >= ppe_num_stats_entries ? hash - PPE_STATS_NUM_ENTRIES
+-					       : hash;
++	sram_num_entries = airoha_ppe_get_total_sram_num_entries(ppe);
++
++	/* Per-flow counters live in the upper half of each PPE SRAM and the
++	 * NPU exposes them as a contiguous per-PPE array. DRAM entries and
++	 * hashes falling in the counter half have no counter slot.
++	 */
++	if (hash >= sram_num_entries) {
++		dev_dbg_ratelimited(eth->dev,
++				    "flow hash %u has no stats slot (DRAM entry)\n",
++				    hash);
++		return -ERANGE;
++	}
++
++	ppe_id = hash / PPE_SRAM_NUM_ENTRIES;
++	entry = hash % PPE_SRAM_NUM_ENTRIES;
++	if (entry >= (u32)PPE_STATS_NUM_ENTRIES) {
++		dev_dbg_ratelimited(eth->dev,
++				    "flow hash %u has no stats slot (PPE%u counter area)\n",
++				    hash, ppe_id);
++		return -ERANGE;
++	}
++
++	*index = ppe_id * PPE_STATS_NUM_ENTRIES + entry;
++	if (*index >= (u32)ppe_num_stats_entries) {
++		dev_dbg_ratelimited(eth->dev,
++				    "flow stats index %u out of range (%d entries)\n",
++				    *index, ppe_num_stats_entries);
++		return -ERANGE;
++	}
+ 
+ 	return 0;
+ }
+ 
++bool airoha_ppe_foe_entry_stats_available(struct airoha_ppe *ppe, u32 hash)
++{
++	struct airoha_eth *eth = ppe->eth;
++	struct airoha_npu *npu;
++	struct airoha_foe_entry *hwe;
++	bool available;
++	u32 index;
++
++	if (!ppe->stats_available || !ppe->foe_stats)
++		return false;
++
++	hwe = ppe->foe + hash * sizeof(*hwe);
++	if (airoha_is_7581(eth) &&
++	    FIELD_GET(AIROHA_FOE_IB1_BIND_PACKET_TYPE, READ_ONCE(hwe->ib1)) ==
++	    PPE_PKT_TYPE_BRIDGE) {
++		dev_dbg_ratelimited(eth->dev,
++				    "flow stats unavailable for native AN7581 L2B entry %u\n",
++				    hash);
++		return false;
++	}
++
++	if (airoha_ppe_foe_get_flow_stats_index(ppe, hash, &index))
++		return false;
++
++	rcu_read_lock();
++	npu = rcu_dereference(eth->npu);
++	available = npu && npu->stats;
++	rcu_read_unlock();
++
++	return available;
++}
++
+ static void airoha_ppe_foe_flow_stat_entry_reset(struct airoha_ppe *ppe,
+ 						 struct airoha_npu *npu,
+ 						 int index)
+ {
++	if (!npu->stats || !ppe->foe_stats)
++		return;
++
+ 	memset_io(&npu->stats[index], 0, sizeof(*npu->stats));
+ 	memset(&ppe->foe_stats[index], 0, sizeof(*ppe->foe_stats));
+ }
+@@ -733,6 +799,9 @@
+ {
+ 	int i, ppe_num_stats_entries;
+ 
++	if (!ppe->stats_available)
++		return;
++
+ 	ppe_num_stats_entries = airoha_ppe_get_total_num_stats_entries(ppe);
+ 	if (ppe_num_stats_entries < 0)
+ 		return;
+@@ -759,6 +828,9 @@
+ 	if (ppe_num_stats_entries < 0)
+ 		return;
+ 
++	if (!ppe->stats_available || !npu->stats || !ppe->foe_stats)
++		return;
++
+ 	if (airoha_ppe_foe_get_flow_stats_index(ppe, hash, &index))
+ 		return;
+ 
+@@ -1938,6 +2010,9 @@
+ 	if (ppe_num_stats_entries < 0)
+ 		return;
+ 
++	if (!ppe->stats_available || !ppe->foe_stats)
++		return;
++
+ 	if (airoha_ppe_foe_get_flow_stats_index(ppe, hash, &index))
+ 		return;
+ 
+@@ -1947,7 +2022,7 @@
+ 	rcu_read_lock();
+ 
+ 	npu = rcu_dereference(eth->npu);
+-	if (npu) {
++	if (npu && npu->stats) {
+ 		u64 packets = ppe->foe_stats[index].packets;
+ 		u64 bytes = ppe->foe_stats[index].bytes;
+ 		struct airoha_foe_stats npu_stats;
+@@ -1978,10 +2053,13 @@
+ 	if (e->hash != 0xffff) {
+ 		struct airoha_foe_stats64 stats = {};
+ 
+-		airoha_ppe_foe_entry_get_stats(eth->ppe, e->hash, &stats);
+-		f->stats.pkts += (stats.packets - e->stats.packets);
+-		f->stats.bytes += (stats.bytes - e->stats.bytes);
+-		e->stats = stats;
++		if (airoha_ppe_foe_entry_stats_available(eth->ppe, e->hash)) {
++			airoha_ppe_foe_entry_get_stats(eth->ppe, e->hash,
++						       &stats);
++			f->stats.pkts += stats.packets - e->stats.packets;
++			f->stats.bytes += stats.bytes - e->stats.bytes;
++			e->stats = stats;
++		}
+ 	}
+ 
+ 	return 0;
+@@ -2075,12 +2153,23 @@
+ 	if (err)
+ 		goto error_npu_put;
+ 
++	ppe->stats_available = false;
++
+ 	ppe_num_stats_entries = airoha_ppe_get_total_num_stats_entries(ppe);
+ 	if (ppe_num_stats_entries > 0) {
+ 		err = npu->ops.ppe_init_stats(npu, ppe->foe_stats_dma,
+ 					      ppe_num_stats_entries);
+-		if (err)
+-			goto error_npu_put;
++		if (err) {
++			dev_warn(eth->dev,
++				 "PPE flow stats unavailable: %d, continuing without statistics\n",
++				 err);
++		} else {
++			ppe->stats_available = true;
++			dev_info(eth->dev,
++				 "flow stats: NPU counters ready per_ppe=%d total=%d\n",
++				 ppe_num_stats_entries / eth->soc->num_ppe,
++				 ppe_num_stats_entries);
++		}
+ 	}
+ 
+ 	airoha_ppe_hw_init(ppe);
+@@ -2255,6 +2344,11 @@
+ 			return -ENOMEM;
+ 	}
+ 
++	dev_info(eth->dev, "flow stats: enabled=%d per_ppe=%d total=%d\n",
++		 ppe_num_stats_entries > 0,
++		 max(ppe_num_stats_entries, 0) / eth->soc->num_ppe,
++		 max(ppe_num_stats_entries, 0));
++
+ 	ppe->foe_check_time = devm_kzalloc(eth->dev,
+ 					   ppe_num_entries * sizeof(*ppe->foe_check_time),
+ 					   GFP_KERNEL);
+--- a/drivers/net/ethernet/airoha/airoha_ppe_debugfs.c
++++ b/drivers/net/ethernet/airoha/airoha_ppe_debugfs.c
+@@ -68,6 +68,7 @@
+ 		unsigned char h_dest[ETH_ALEN];
+ 		struct airoha_foe_entry *hwe;
+ 		u32 type, state, ib2, data;
++		bool stats_available;
+ 		bool ipv6 = false;
+ 
+ 		hwe = airoha_ppe_foe_get_entry(ppe, i);
+@@ -157,18 +158,23 @@
+ 				cpu_to_be16(hwe->ipv4.l2.src_mac_lo);
+ 		}
+ 
+-		airoha_ppe_foe_entry_get_stats(ppe, i, &stats);
++		stats_available = airoha_ppe_foe_entry_stats_available(ppe, i);
++		if (stats_available)
++			airoha_ppe_foe_entry_get_stats(ppe, i, &stats);
+ 
+ 		*((__be32 *)h_dest) = cpu_to_be32(l2->dest_mac_hi);
+ 		*((__be16 *)&h_dest[4]) = cpu_to_be16(l2->dest_mac_lo);
+ 		*((__be32 *)h_source) = cpu_to_be32(l2->src_mac_hi);
+ 
+-		seq_printf(m, " eth=%pM->%pM etype=%04x data=%08x"
+-			      " vlan=%d,%d ib1=%08x ib2=%08x"
+-			      " packets=%llu bytes=%llu\n",
+-			   h_source, h_dest, l2->etype, data,
+-			   l2->vlan1, l2->vlan2, hwe->ib1, ib2,
+-			   stats.packets, stats.bytes);
++		seq_printf(m, " eth=%pM->%pM etype=%04x data=%08x",
++			   h_source, h_dest, l2->etype, data);
++		seq_printf(m, " vlan=%d,%d ib1=%08x ib2=%08x",
++			   l2->vlan1, l2->vlan2, hwe->ib1, ib2);
++		if (stats_available)
++			seq_printf(m, " packets=%llu bytes=%llu\n",
++				   stats.packets, stats.bytes);
++		else
++			seq_puts(m, " packets=n/a bytes=n/a\n");
+ 	}
+ 
+ 	return 0;
+@@ -197,6 +203,7 @@
+ 	 */
+ 	seq_printf(m, "npu_attached: %u\n",
+ 		   !!rcu_access_pointer(eth->npu));
++	seq_printf(m, "flow_stats_available: %u\n", ppe->stats_available);
+ 	seq_printf(m, "gdm2_fwd_cfg: %08x\n",
+ 		   airoha_fe_rr(eth, REG_GDM_FWD_CFG(AIROHA_GDM2_IDX)));
+ 	seq_printf(m, "fe_wan_port: %08x\n",

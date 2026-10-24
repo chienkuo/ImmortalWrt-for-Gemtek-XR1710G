@@ -1,0 +1,369 @@
+From: zhangjianguo <janegle@gmail.com>
+Subject: [PATCH] net: airoha: allow the WAN role on any port, including DSA user ports
+
+The Airoha Ethernet driver hardcodes GDM2 as the WAN port in
+airoha_dev_init(): AIROHA_PRIV_F_WAN is always set on GDM2, so QDMA1,
+PPE2, the WAN MAC address registers, REG_WAN_MTU0 and REG_FE_WAN_PORT
+are all bound to GDM2 regardless of the actual board wiring.  GDM3 and
+GDM4 can only take the WAN role over if no WAN device is present yet.
+
+On the Gemtek XR1710G (AN7581 with the internal MT7530 GSW) the
+physical WAN port (gdm2/phy8) has been moved to br-lan and the real WAN
+is lan4, a DSA user port of the internal switch whose conduit is GDM1.
+The board therefore ends up with GDM2, now a LAN port, configured as
+the WAN device:
+
+  - GDM2 LAN traffic is moved to QDMA1/PPE2 and uses the WAN MAC
+    registers;
+  - REG_FE_WAN_PORT keeps pointing at GDM2 (fe_wan_port: 00000002 in
+    /sys/kernel/debug/ppe/config) while the WAN traffic enters the SoC
+    from the GSW source port of lan4;
+  - airoha_get_wan_gdm_dev() returns GDM2, so the WAN role cannot be
+    used by another port and GDM3/GDM4 QoS promotion is blocked.
+
+The port swap is fixed by the board firmware in uci-defaults and the
+DSA user port netdev belongs to the DSA layer, so userspace cannot set
+a sysfs attribute on the airoha netdev to describe the role.  Describe
+it in the device tree instead.
+
+Add an airoha,wan boolean property:
+
+  - on a GMAC port node it assigns the WAN role to that GDM device and
+    reuses the existing WAN machinery (QDMA1, PPE2 CPU port, WAN MAC
+    registers, REG_WAN_MTU0, GDM2 loopback for GDM3/GDM4);
+  - on a DSA user port node it assigns the WAN role to that switch
+    port.  The GDM device used as DSA conduit keeps carrying LAN
+    traffic and therefore keeps QDMA0/PPE1, the LAN MAC registers and
+    its LAN forwarding configuration, since the switch multiplexes LAN
+    and WAN traffic on the same CPU port.  The driver records the
+    switch port, programs REG_FE_WAN_PORT with the GSW source port of
+    the WAN port (0x10 + DSA port index), keeps REG_WAN_MTU0 in sync
+    with the conduit MTU, and prevents GDM3/GDM4 QoS offload from
+    taking over a device tree assigned WAN role.
+
+When no airoha,wan property is present the legacy behaviour is
+preserved: GDM2 is the WAN port and GDM3/GDM4 fall back to it when no
+other WAN device exists yet.
+
+The PPE flow offload path already handles DSA user ports: pse_port,
+NBQ and the L2 etype are derived from the conduit port and the DSA
+port index, and a DSA WAN port must keep using the switch fast path,
+so no functional change is needed there.  Add a comment documenting
+that the conduit GDM device must not be reconfigured as a WAN device.
+
+Signed-off-by: zhangjianguo <janegle@gmail.com>
+---
+--- a/drivers/net/ethernet/airoha/airoha_eth.c
++++ b/drivers/net/ethernet/airoha/airoha_eth.c
+@@ -2492,7 +2492,7 @@
+ 	struct airoha_gdm_dev *dev = netdev_priv(netdev);
+ 
+ 	airoha_ppe_set_mtu(dev);
+-	if (!airoha_is_lan_gdm_dev(dev))
++	if (!airoha_is_lan_gdm_dev(dev) || airoha_has_wan_dsa_port(dev))
+ 		airoha_fe_rmw(dev->eth, REG_WAN_MTU0,
+ 			      WAN_MTU0_MASK,
+ 			      FIELD_PREP(WAN_MTU0_MASK, netdev->mtu + VLAN_ETH_HLEN));
+@@ -2798,27 +2798,50 @@
+ 	netif_tx_wake_all_queues(netdev);
+ }
+ 
++/* The FE identifies WAN traffic by source port. DSA user ports are reported
++ * as source ports 0x10 + port index, while the GDM device acting as their
++ * conduit remains a LAN device.
++ */
++static void airoha_dev_set_dsa_wan_port(struct airoha_gdm_dev *dev)
++{
++	struct airoha_eth *eth = dev->eth;
++
++	if (!airoha_has_wan_dsa_port(dev))
++		return;
++
++	airoha_fe_rmw(eth, REG_FE_WAN_PORT,
++		      WAN1_EN_MASK | WAN1_MASK | WAN0_MASK,
++		      FIELD_PREP(WAN0_MASK,
++				 AIROHA_GSW_SRCPORT(dev->wan_dsa_port)));
++}
++
+ static int airoha_dev_init(struct net_device *netdev)
+ {
+ 	struct airoha_gdm_dev *dev = netdev_priv(netdev);
+ 	struct airoha_gdm_port *port = dev->port;
+ 
+-	switch (port->id) {
+-	case AIROHA_GDM3_IDX:
+-	case AIROHA_GDM4_IDX:
+-		if (airoha_get_wan_gdm_dev(dev->eth))
++	/* Preserve the legacy default (GDM2 is the WAN port and GDM3/GDM4 take
++	 * it over if no other WAN device is present) unless the board assigned
++	 * the WAN role in the device tree.
++	 */
++	if (!dev->eth->wan_role_declared) {
++		switch (port->id) {
++		case AIROHA_GDM3_IDX:
++		case AIROHA_GDM4_IDX:
++			if (airoha_get_wan_gdm_dev(dev->eth))
++				break;
++			fallthrough;
++		case AIROHA_GDM2_IDX:
++			dev->flags |= AIROHA_PRIV_F_WAN;
+ 			break;
+-		fallthrough;
+-	case AIROHA_GDM2_IDX:
+-		/* GDM2 is always used as wan */
+-		dev->flags |= AIROHA_PRIV_F_WAN;
+-		break;
+-	default:
+-		break;
++		default:
++			break;
++		}
+ 	}
+ 
+ 	airoha_dev_set_qdma(dev);
+ 	airoha_set_macaddr(dev, netdev->dev_addr);
++	airoha_dev_set_dsa_wan_port(dev);
+ 
+ 	if (!airoha_is_lan_gdm_dev(dev) &&
+ 	    (port->id == AIROHA_GDM3_IDX || port->id == AIROHA_GDM4_IDX)) {
+@@ -4123,6 +4146,12 @@
+ 	if (!airoha_is_lan_gdm_dev(dev)) /* Already enabled */
+ 		return 0;
+ 
++	if (eth->wan_role_declared) {
++		NL_SET_ERR_MSG_MOD(extack,
++				   "WAN role assigned by the device tree");
++		return -EBUSY;
++	}
++
+ 	mutex_lock(&flow_offload_mutex);
+ 
+ 	wan_dev = airoha_get_wan_gdm_dev(eth);
+@@ -4754,6 +4783,17 @@
+ 	dev->port = port;
+ 	dev->eth = eth;
+ 	dev->nbq = nbq;
++	dev->wan_dsa_port = -1;
++	if (of_property_read_bool(np, "airoha,wan")) {
++		if (eth->wan_role_declared) {
++			dev_warn(eth->dev,
++				 "%pOF: ignoring airoha,wan, WAN role already assigned\n",
++				 np);
++		} else {
++			dev->flags |= AIROHA_PRIV_F_WAN;
++			eth->wan_role_declared = true;
++		}
++	}
+ 	if (of_property_read_bool(np, "airoha,pon-data-path")) {
+ 		/* PON GDM2 shares QDMA/NAPI while airoha-xpon owns carrier state. */
+ 		if (port->id != AIROHA_GDM2_IDX) {
+@@ -4853,6 +4893,120 @@
+ 	return !d ? airoha_alloc_gdm_device(eth, port, nbq, np) : 0;
+ }
+ 
++static struct airoha_gdm_dev *
++airoha_get_gdm_dev_by_node(struct airoha_eth *eth, struct device_node *np)
++{
++	int i, j;
++
++	for (i = 0; i < ARRAY_SIZE(eth->ports); i++) {
++		struct airoha_gdm_port *port = eth->ports[i];
++
++		if (!port)
++			continue;
++
++		for (j = 0; j < ARRAY_SIZE(port->devs); j++) {
++			struct airoha_gdm_dev *dev = port->devs[j];
++
++			if (dev && netdev_from_priv(dev)->dev.of_node == np)
++				return dev;
++		}
++	}
++
++	return NULL;
++}
++
++static void airoha_parse_wan_ports_on_switch(struct airoha_eth *eth,
++					     struct airoha_gdm_dev *dev,
++					     struct device_node *ports,
++					     struct device_node *cpu_port)
++{
++	struct device_node *port;
++	u32 port_id;
++
++	for_each_available_child_of_node(ports, port) {
++		if (port == cpu_port)
++			continue;
++
++		if (!of_property_read_bool(port, "airoha,wan"))
++			continue;
++
++		if (of_property_read_u32(port, "reg", &port_id) ||
++		    port_id >= AIROHA_MAX_DSA_PORTS) {
++			dev_warn(eth->dev, "%pOF: invalid DSA port id\n", port);
++			continue;
++		}
++
++		/* The GSW reports its user ports as source ports 0x10-0x14. */
++		if (port_id > 4) {
++			dev_warn(eth->dev, "%pOF: unsupported WAN DSA port %u\n",
++				 port, port_id);
++			continue;
++		}
++
++		if (eth->wan_role_declared) {
++			dev_warn(eth->dev,
++				 "%pOF: ignoring airoha,wan, WAN role already assigned\n",
++				 port);
++			continue;
++		}
++
++		dev->wan_dsa_port = port_id;
++		eth->wan_role_declared = true;
++		dev_info(eth->dev, "%pOF: assigned WAN role to DSA port %u\n",
++			 port, port_id);
++	}
++}
++
++static void airoha_parse_switch_wan_ports(struct airoha_eth *eth,
++					  struct device_node *switch_node)
++{
++	struct device_node *ports, *port;
++
++	ports = of_get_child_by_name(switch_node, "ports");
++	if (!ports)
++		ports = of_get_child_by_name(switch_node, "ethernet-ports");
++	if (!ports)
++		return;
++
++	for_each_available_child_of_node(ports, port) {
++		struct device_node *conduit;
++		struct airoha_gdm_dev *dev;
++
++		/* A port with an ethernet phandle is the switch CPU port and
++		 * identifies the GDM device used as DSA conduit.
++		 */
++		conduit = of_parse_phandle(port, "ethernet", 0);
++		if (!conduit)
++			continue;
++
++		dev = airoha_get_gdm_dev_by_node(eth, conduit);
++		of_node_put(conduit);
++		if (!dev)
++			continue;
++
++		airoha_parse_wan_ports_on_switch(eth, dev, ports, port);
++	}
++
++	of_node_put(ports);
++}
++
++/* A board can assign the WAN role to a DSA user port with an airoha,wan
++ * property in the switch port node. The GDM device used as DSA conduit is
++ * then only carrying WAN traffic for that port, all the other switch ports
++ * keep using it as a LAN device.
++ */
++static void airoha_parse_dsa_wan_ports(struct airoha_eth *eth)
++{
++	struct device_node *soc = eth->dev->of_node->parent;
++	struct device_node *switch_node;
++
++	if (!soc)
++		return;
++
++	for_each_available_child_of_node(soc, switch_node)
++		airoha_parse_switch_wan_ports(eth, switch_node);
++}
++
+ static int airoha_register_gdm_devices(struct airoha_eth *eth)
+ {
+ 	int i;
+@@ -4991,6 +5145,8 @@
+ 		}
+ 	}
+ 
++	airoha_parse_dsa_wan_ports(eth);
++
+ 	err = airoha_register_gdm_devices(eth);
+ 	if (err)
+ 		goto error_napi_stop;
+--- a/drivers/net/ethernet/airoha/airoha_eth.h
++++ b/drivers/net/ethernet/airoha/airoha_eth.h
+@@ -75,6 +75,9 @@
+ #define MTK_HDR_XMIT_TAGGED_TPID_8100	1
+ #define MTK_HDR_XMIT_TAGGED_TPID_88A8	2
+ 
++/* FE source port of the first GSW/DSA user port. */
++#define AIROHA_GSW_SRCPORT(_port)	(0x10 + (_port))
++
+ enum {
+ 	QDMA_INT_REG_IDX0,
+ 	QDMA_INT_REG_IDX1,
+@@ -679,6 +682,8 @@
+ 
+ 	u32 flags;
+ 	int nbq;
++	/* DSA user port carrying WAN traffic, -1 if none */
++	int wan_dsa_port;
+ 
+ 	u32 pon_qdma_tag;
+ 	struct airoha_pon_flow_table __rcu *pon_flow_table;
+@@ -752,6 +757,9 @@
+ 	struct airoha_ppe *ppe;
+ 	struct rhashtable flow_table;
+ 
++	/* The board assigned the WAN role in the device tree. */
++	bool wan_role_declared;
++
+ 	struct reset_control_bulk_data rsts[AIROHA_MAX_NUM_RSTS];
+ 	struct reset_control_bulk_data *xsi_rsts;
+ 
+@@ -808,6 +816,15 @@
+ 	return !(dev->flags & AIROHA_PRIV_F_WAN);
+ }
+ 
++/* A DSA user port can be the WAN port while the GDM device acting as its
++ * conduit remains a LAN device, since the switch multiplexes LAN and WAN
++ * traffic on the same conduit.
++ */
++static inline bool airoha_has_wan_dsa_port(struct airoha_gdm_dev *dev)
++{
++	return dev->wan_dsa_port >= 0;
++}
++
+ static inline bool airoha_is_7581(struct airoha_eth *eth)
+ {
+ 	return eth->soc->version == 0x7581;
+--- a/drivers/net/ethernet/airoha/airoha_ppe.c
++++ b/drivers/net/ethernet/airoha/airoha_ppe.c
+@@ -470,6 +470,11 @@
+ 			*egress_dev = dev;
+ 
+ 			port = dev->port;
++			/* A DSA user port assigned the WAN role keeps using the
++			 * conduit GDM device: the switch multiplexes LAN and WAN
++			 * traffic on its CPU port, so the conduit is never
++			 * reconfigured as a WAN device.
++			 */
+ 			if (dsa_port >= 0 || airoha_is_lan_gdm_dev(dev))
+ 				pse_port = port->id == 4 ? FE_PSE_PORT_GDM4
+ 							 : port->id;
+--- a/Documentation/devicetree/bindings/net/airoha,en7581-eth.yaml
++++ b/Documentation/devicetree/bindings/net/airoha,en7581-eth.yaml
+@@ -97,6 +97,16 @@
+         maximum: 4
+         description: GMAC port identifier
+ 
++      airoha,wan:
++        type: boolean
++        description:
++          Indicates that this GMAC port carries WAN traffic. If neither this
++          property nor an airoha,wan property on a DSA user port is present,
++          the driver keeps the legacy default and uses the GDM2 port as WAN.
++          On SoCs with an internal switch the same property can be added to
++          a DSA user port to assign the WAN role to that switch port, while
++          the GDM port used as DSA conduit keeps carrying LAN traffic.
++
+     required:
+       - reg
+       - compatible
