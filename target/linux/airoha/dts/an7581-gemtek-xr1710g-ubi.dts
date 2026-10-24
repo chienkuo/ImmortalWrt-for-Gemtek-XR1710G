@@ -484,8 +484,6 @@ memory@80000000 {
 &gsw_port2 {
 	status = "okay";
 	label = "lan4";
-	/* lan4 is the board WAN port, GDM2/phy8 is a br-lan member. */
-	airoha,wan;
 };
 &uart2 {
 	status = "okay";
