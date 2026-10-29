@@ -55,16 +55,19 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
 ---
 --- a/drivers/net/ethernet/airoha/airoha_eth.c
 +++ b/drivers/net/ethernet/airoha/airoha_eth.c
-@@ -2492,7 +2492,7 @@
- 	struct airoha_gdm_dev *dev = netdev_priv(netdev);
+@@ -2500,8 +2500,9 @@
+ 	 * register is compared against, on top of the operator VLAN tag that
+ 	 * VLAN_ETH_HLEN already covers. LAN ports stay VLAN-only.
+ 	 */
+-	if (!airoha_is_lan_gdm_dev(dev)) {
+-		if (dev->flags & AIROHA_PRIV_F_PON)
++	if (!airoha_is_lan_gdm_dev(dev) || airoha_has_wan_dsa_port(dev)) {
++		if ((dev->flags & AIROHA_PRIV_F_PON) ||
++		    airoha_has_wan_dsa_port(dev))
+ 			len += PPPOE_SES_HLEN;
  
- 	airoha_ppe_set_mtu(dev);
--	if (!airoha_is_lan_gdm_dev(dev))
-+	if (!airoha_is_lan_gdm_dev(dev) || airoha_has_wan_dsa_port(dev))
  		airoha_fe_rmw(dev->eth, REG_WAN_MTU0,
- 			      WAN_MTU0_MASK,
- 			      FIELD_PREP(WAN_MTU0_MASK, netdev->mtu + VLAN_ETH_HLEN));
-@@ -2798,27 +2798,50 @@
+@@ -2810,27 +2811,50 @@
  	netif_tx_wake_all_queues(netdev);
  }
  
@@ -126,7 +129,7 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  
  	if (!airoha_is_lan_gdm_dev(dev) &&
  	    (port->id == AIROHA_GDM3_IDX || port->id == AIROHA_GDM4_IDX)) {
-@@ -4123,6 +4146,12 @@
+@@ -4135,6 +4159,12 @@
  	if (!airoha_is_lan_gdm_dev(dev)) /* Already enabled */
  		return 0;
  
@@ -139,7 +142,7 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  	mutex_lock(&flow_offload_mutex);
  
  	wan_dev = airoha_get_wan_gdm_dev(eth);
-@@ -4754,6 +4783,17 @@
+@@ -4766,6 +4796,17 @@
  	dev->port = port;
  	dev->eth = eth;
  	dev->nbq = nbq;
@@ -157,7 +160,7 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  	if (of_property_read_bool(np, "airoha,pon-data-path")) {
  		/* PON GDM2 shares QDMA/NAPI while airoha-xpon owns carrier state. */
  		if (port->id != AIROHA_GDM2_IDX) {
-@@ -4853,6 +4893,120 @@
+@@ -4865,6 +4906,120 @@
  	return !d ? airoha_alloc_gdm_device(eth, port, nbq, np) : 0;
  }
  
@@ -278,7 +281,7 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  static int airoha_register_gdm_devices(struct airoha_eth *eth)
  {
  	int i;
-@@ -4991,6 +5145,8 @@
+@@ -5003,6 +5158,8 @@
  		}
  	}
  
@@ -336,7 +339,7 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  	return eth->soc->version == 0x7581;
 --- a/drivers/net/ethernet/airoha/airoha_ppe.c
 +++ b/drivers/net/ethernet/airoha/airoha_ppe.c
-@@ -470,6 +470,11 @@
+@@ -482,6 +482,11 @@
  			*egress_dev = dev;
  
  			port = dev->port;
