@@ -160,14 +160,38 @@ jobs:
             --config .config \
             --directory bin/targets/airoha/an7581
           kernel_config=$(find build_dir/target-aarch64_cortex-a53_musl/linux-airoha_an7581 -path '*/linux-*/.config' -print -quit)
-          manifest=$(find bin/targets/airoha/an7581 -path '*xr1710g*' -name 'packages.manifest' -print -quit)
-          [ -n "$manifest" ] || manifest=$(find bin/targets/airoha/an7581 -maxdepth 1 -type f -name '*manifest' -print -quit)
           test -n "$kernel_config"
-          test -n "$manifest"
-          bash scripts/check-gemtek-profile-isolation.sh \
-            --config .config \
-            --kernel-config "$kernel_config" \
-            --manifest "$manifest"
+          # MULTI_PROFILE: bin/ ships only the profile-common manifest; per-device
+          # package membership must be proven from the firmware images themselves.
+          # Extract the squashfs rootfs from each produced itb and rebuild the
+          # installed-package list from its apk database.
+          mapfile -t itbs < <(find bin/targets/airoha/an7581 -maxdepth 1 -type f -name '*xr1710g*-squashfs-sysupgrade.itb' | sort)
+          if [ "${#itbs[@]}" -gt 0 ]; then
+            command -v unsquashfs >/dev/null || sudo apt-get install -y squashfs-tools
+            margs=()
+            for itb in "${itbs[@]}"; do
+              sq=$(mktemp); rm -f "$sq"
+              python3 scripts/fit-extract-rootfs.py "$itb" "$sq"
+              td=$(mktemp -d)
+              unsquashfs -f -d "$td" "$sq" lib/apk >/dev/null
+              m="$td/packages.manifest"
+              ls "$td/lib/apk/packages" | sed 's/\.list$//' | sort > "$m"
+              echo "device manifest from $itb: $(wc -l < "$m") packages"
+              margs+=(--manifest "$m")
+              rm -f "$sq"
+            done
+            bash scripts/check-gemtek-profile-isolation.sh \
+              --config .config \
+              --kernel-config "$kernel_config" \
+              "${margs[@]}"
+          else
+            manifest=$(find bin/targets/airoha/an7581 -maxdepth 1 -type f -name '*manifest' -print -quit)
+            test -n "$manifest"
+            bash scripts/check-gemtek-profile-isolation.sh \
+              --config .config \
+              --kernel-config "$kernel_config" \
+              --manifest "$manifest"
+          fi
 
       - name: Check build status
         if: always()
