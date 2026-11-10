@@ -2,7 +2,7 @@ From: zhangjianguo <janegle@gmail.com>
 Subject: [PATCH] net: airoha: allow the WAN role on any port, including DSA user ports
 
 The Airoha Ethernet driver hardcodes GDM2 as the WAN port in
-airoha_dev_init(): AIROHA_PRIV_F_WAN is always set on GDM2, so QDMA1,
+airoha_dev_init(): AIROHA_DEV_F_WAN is always set on GDM2, so QDMA1,
 PPE2, the WAN MAC address registers, REG_WAN_MTU0 and REG_FE_WAN_PORT
 are all bound to GDM2 regardless of the actual board wiring.  GDM3 and
 GDM4 can only take the WAN role over if no WAN device is present yet.
@@ -55,20 +55,20 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
 ---
 --- a/drivers/net/ethernet/airoha/airoha_eth.c
 +++ b/drivers/net/ethernet/airoha/airoha_eth.c
-@@ -2500,8 +2500,9 @@
+@@ -2558,8 +2558,9 @@
  	 * register is compared against, on top of the operator VLAN tag that
  	 * VLAN_ETH_HLEN already covers. LAN ports stay VLAN-only.
  	 */
 -	if (!airoha_is_lan_gdm_dev(dev)) {
--		if (dev->flags & AIROHA_PRIV_F_PON)
+-		if (test_bit(AIROHA_DEV_F_PON, &dev->flags))
 +	if (!airoha_is_lan_gdm_dev(dev) || airoha_has_wan_dsa_port(dev)) {
-+		if ((dev->flags & AIROHA_PRIV_F_PON) ||
++		if (test_bit(AIROHA_DEV_F_PON, &dev->flags) ||
 +		    airoha_has_wan_dsa_port(dev))
  			len += PPPOE_SES_HLEN;
  
- 		airoha_fe_rmw(dev->eth, REG_WAN_MTU0,
-@@ -2810,27 +2811,50 @@
- 	netif_tx_wake_all_queues(netdev);
+ 		airoha_fe_rmw(dev->eth, REG_WAN_MTU0, WAN_MTU0_MASK,
+@@ -2893,27 +2894,51 @@
+ 		airoha_dev_lro_enable(dev);
  }
  
 +/* The FE identifies WAN traffic by source port. DSA user ports are reported
@@ -109,12 +109,13 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
 +				break;
 +			fallthrough;
 +		case AIROHA_GDM2_IDX:
-+			dev->flags |= AIROHA_PRIV_F_WAN;
++			/* GDM2 is always used as wan */
++			set_bit(AIROHA_DEV_F_WAN, &dev->flags);
  			break;
 -		fallthrough;
 -	case AIROHA_GDM2_IDX:
 -		/* GDM2 is always used as wan */
--		dev->flags |= AIROHA_PRIV_F_WAN;
+-		set_bit(AIROHA_DEV_F_WAN, &dev->flags);
 -		break;
 -	default:
 -		break;
@@ -129,7 +130,7 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  
  	if (!airoha_is_lan_gdm_dev(dev) &&
  	    (port->id == AIROHA_GDM3_IDX || port->id == AIROHA_GDM4_IDX)) {
-@@ -4135,6 +4159,12 @@
+@@ -4208,6 +4233,12 @@
  	if (!airoha_is_lan_gdm_dev(dev)) /* Already enabled */
  		return 0;
  
@@ -142,7 +143,7 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  	mutex_lock(&flow_offload_mutex);
  
  	wan_dev = airoha_get_wan_gdm_dev(eth);
-@@ -4766,6 +4796,17 @@
+@@ -4843,6 +4874,17 @@
  	dev->port = port;
  	dev->eth = eth;
  	dev->nbq = nbq;
@@ -153,17 +154,18 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
 +				 "%pOF: ignoring airoha,wan, WAN role already assigned\n",
 +				 np);
 +		} else {
-+			dev->flags |= AIROHA_PRIV_F_WAN;
++			set_bit(AIROHA_DEV_F_WAN, &dev->flags);
 +			eth->wan_role_declared = true;
 +		}
 +	}
  	if (of_property_read_bool(np, "airoha,pon-data-path")) {
  		/* PON GDM2 shares QDMA/NAPI while airoha-xpon owns carrier state. */
  		if (port->id != AIROHA_GDM2_IDX) {
-@@ -4865,6 +4906,120 @@
+@@ -4942,6 +4984,121 @@
  	return !d ? airoha_alloc_gdm_device(eth, port, nbq, np) : 0;
  }
  
++
 +static struct airoha_gdm_dev *
 +airoha_get_gdm_dev_by_node(struct airoha_eth *eth, struct device_node *np)
 +{
@@ -281,7 +283,7 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  static int airoha_register_gdm_devices(struct airoha_eth *eth)
  {
  	int i;
-@@ -5003,6 +5158,8 @@
+@@ -5146,6 +5303,8 @@
  		}
  	}
  
@@ -290,6 +292,7 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  	err = airoha_register_gdm_devices(eth);
  	if (err)
  		goto error_napi_stop;
+
 --- a/drivers/net/ethernet/airoha/airoha_eth.h
 +++ b/drivers/net/ethernet/airoha/airoha_eth.h
 @@ -75,6 +75,9 @@
@@ -302,16 +305,16 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  enum {
  	QDMA_INT_REG_IDX0,
  	QDMA_INT_REG_IDX1,
-@@ -679,6 +682,8 @@
+@@ -702,6 +705,8 @@
  
- 	u32 flags;
+ 	unsigned long flags;
  	int nbq;
 +	/* DSA user port carrying WAN traffic, -1 if none */
 +	int wan_dsa_port;
  
  	u32 pon_qdma_tag;
  	struct airoha_pon_flow_table __rcu *pon_flow_table;
-@@ -752,6 +757,9 @@
+@@ -782,6 +787,9 @@
  	struct airoha_ppe *ppe;
  	struct rhashtable flow_table;
  
@@ -321,8 +324,8 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  	struct reset_control_bulk_data rsts[AIROHA_MAX_NUM_RSTS];
  	struct reset_control_bulk_data *xsi_rsts;
  
-@@ -808,6 +816,15 @@
- 	return !(dev->flags & AIROHA_PRIV_F_WAN);
+@@ -838,6 +846,15 @@
+ 	return !test_bit(AIROHA_DEV_F_WAN, &dev->flags);
  }
  
 +/* A DSA user port can be the WAN port while the GDM device acting as its
@@ -337,9 +340,10 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  static inline bool airoha_is_7581(struct airoha_eth *eth)
  {
  	return eth->soc->version == 0x7581;
+
 --- a/drivers/net/ethernet/airoha/airoha_ppe.c
 +++ b/drivers/net/ethernet/airoha/airoha_ppe.c
-@@ -482,6 +482,11 @@
+@@ -568,6 +568,11 @@
  			*egress_dev = dev;
  
  			port = dev->port;
@@ -351,6 +355,7 @@ Signed-off-by: zhangjianguo <janegle@gmail.com>
  			if (dsa_port >= 0 || airoha_is_lan_gdm_dev(dev))
  				pse_port = port->id == 4 ? FE_PSE_PORT_GDM4
  							 : port->id;
+
 --- a/Documentation/devicetree/bindings/net/airoha,en7581-eth.yaml
 +++ b/Documentation/devicetree/bindings/net/airoha,en7581-eth.yaml
 @@ -97,6 +97,16 @@
