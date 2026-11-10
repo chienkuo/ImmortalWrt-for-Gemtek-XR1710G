@@ -1,0 +1,23 @@
+From: zhangjianguo <janegle@gmail.com>
+Subject: [PATCH] net: airoha: forward-declare airoha_ppe_flow_stats_available()
+
+9999-15 (report unsupported PPE flow stats) added a call to
+airoha_ppe_flow_stats_available() in airoha_ppe_flow_dump() before the
+static definition of the helper, breaking the build with an implicit
+declaration whenever CONFIG_DEBUG_FS compiles airoha_ppe_debugfs.c.
+Forward-declare the helper. Upstream CI did not hit this because no
+tested config compiled the file before.
+
+Signed-off-by: zhangjianguo <janegle@gmail.com>
+---
+--- a/drivers/net/ethernet/airoha/airoha_ppe_debugfs.c
++++ b/drivers/net/ethernet/airoha/airoha_ppe_debugfs.c
+@@ -9,6 +9,8 @@
+ #include "airoha_regs.h"
+ #include "airoha_eth.h"
+ 
++static bool airoha_ppe_flow_stats_available(struct airoha_ppe *ppe);
++
+ static void airoha_debugfs_ppe_print_tuple(struct seq_file *m,
+ 					   void *src_addr, void *dest_addr,
+ 					   u16 *src_port, u16 *dest_port,
