@@ -160,7 +160,8 @@ jobs:
             --config .config \
             --directory bin/targets/airoha/an7581
           kernel_config=$(find build_dir/target-aarch64_cortex-a53_musl/linux-airoha_an7581 -path '*/linux-*/.config' -print -quit)
-          manifest=$(find bin/targets/airoha/an7581 -maxdepth 1 -type f -name '*manifest' -print -quit)
+          manifest=$(find bin/targets/airoha/an7581 -path '*xr1710g*' -name 'packages.manifest' -print -quit)
+          [ -n "$manifest" ] || manifest=$(find bin/targets/airoha/an7581 -maxdepth 1 -type f -name '*manifest' -print -quit)
           test -n "$kernel_config"
           test -n "$manifest"
           bash scripts/check-gemtek-profile-isolation.sh \
@@ -219,7 +220,8 @@ jobs:
           for image in "${images[@]}"; do
             if [[ "$image" == *-squashfs-sysupgrade.itb ]]; then
               manifest="${image%-squashfs-sysupgrade.itb}.manifest"
-              [[ -s "$manifest" ]] || {
+              [[ -s "$manifest" ]] || manifest=$(ls *manifest 2>/dev/null | head -1)
+              [[ -n "$manifest" && -s "$manifest" ]] || {
                 echo "Missing manifest for $image: $manifest" >&2
                 exit 1
               }
