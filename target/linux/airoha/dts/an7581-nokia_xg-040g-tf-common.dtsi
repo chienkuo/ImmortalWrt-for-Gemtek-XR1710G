@@ -13,6 +13,11 @@
 	/delete-node/ usb-power;
 };
 
+/* A/B test build: keep the MD-style interrupts on gsw_phy2/3/4.
+ * The previously sampled polling setup is restored by re-adding the
+ * three /delete-property/ interrupts blocks here.
+ */
+
 &usb0 {
 	status = "disabled";
 

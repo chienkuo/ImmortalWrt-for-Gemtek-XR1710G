@@ -22,6 +22,7 @@ Based on commit bf8ce0c0bf10 from ericwoud/bpir-nftflow-nf-next-20260707.
 
 Signed-off-by: Eric Woudstra <ericwouds@gmail.com>
 Signed-off-by: Bohdan Chubuk <chbgdn@gmail.com>
+Signed-off-by: naoki66 <naoki66@qq.com>
 ---
  include/linux/netfilter_bridge.h           |   6 +
  net/bridge/netfilter/nf_conntrack_bridge.c | 203 ++++++++++++++++++---
@@ -238,7 +239,7 @@ Signed-off-by: Bohdan Chubuk <chbgdn@gmail.com>
 +		if (!pskb_may_pull(skb, offset + sizeof(struct ipv6hdr)))
 +			goto do_not_track;
  
- 		len = sizeof(struct ipv6hdr) + ntohs(ipv6_hdr(skb)->payload_len);
+ 		len = sizeof(struct ipv6hdr) + skb_ipv6_payload_len(skb);
 -		if (pskb_trim_rcsum(skb, len))
 -			return NF_ACCEPT;
 +		if (pppoe_len && pppoe_len != len)

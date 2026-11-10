@@ -52,42 +52,21 @@ define Device/FitImageLzma
 	KERNEL_NAME := Image
 endef
 
-define Device/airoha_an7581-evb
+define Device/airoha_an7581-evb-multievb
   $(call Device/FitImageLzma)
   DEVICE_VENDOR := Airoha
-  DEVICE_MODEL := AN7581 Evaluation Board (SNAND)
-  DEVICE_PACKAGES := kmod-leds-pwm kmod-pwm-airoha kmod-input-gpio-keys-polled
-  DEVICE_DTS := an7581-evb
+  DEVICE_MODEL := AN7581 Evaluation Board (Multi-evb)
+  DEVICE_PACKAGES := kmod-leds-pwm kmod-pwm-airoha kmod-input-gpio-keys-polled airoha-en7581-npu-firmware \
+    kmod-mt7992-firmware airoha-en7581-mt7996-npu-firmware kmod-mt7996-firmware wpad-openssl \
+    kmod-sound-soc-an7581-wm8960
+  DEVICE_DTS := an7581-evb-multievb
+  DEVICE_DTS_OVERLAY := an7581-evb an7581-evb-emmc-eagle an7581-evb-emmc-kite
   IMAGE/sysupgrade.bin := append-kernel | pad-to 128k | append-rootfs | pad-rootfs | append-metadata
   ARTIFACT/preloader.bin := an7581-preloader rfb
   ARTIFACT/bl31-uboot.fip := an7581-bl31-uboot rfb
   ARTIFACTS := preloader.bin bl31-uboot.fip
 endef
-TARGET_DEVICES += airoha_an7581-evb
-
-define Device/airoha_an7581-evb-emmc-eagle
-  DEVICE_VENDOR := Airoha
-  DEVICE_MODEL := AN7581 Evaluation Board (eMMC + Eagle)
-  DEVICE_DTS := an7581-evb-emmc-eagle
-  DEVICE_PACKAGES := airoha-en7581-mt7996-npu-firmware \
-		    kmod-mt7996-firmware wpad-openssl
-  ARTIFACT/preloader.bin := an7581-preloader rfb
-  ARTIFACT/bl31-uboot.fip := an7581-bl31-uboot rfb
-  ARTIFACTS := preloader.bin bl31-uboot.fip
-endef
-TARGET_DEVICES += airoha_an7581-evb-emmc-eagle
-
-define Device/airoha_an7581-evb-emmc-kite
-  DEVICE_VENDOR := Airoha
-  DEVICE_MODEL := AN7581 Evaluation Board (eMMC + Kite)
-  DEVICE_DTS := an7581-evb-emmc-kite
-  DEVICE_PACKAGES := airoha-en7581-npu-firmware \
-		    kmod-mt7992-firmware wpad-openssl
-  ARTIFACT/preloader.bin := an7581-preloader rfb
-  ARTIFACT/bl31-uboot.fip := an7581-bl31-uboot rfb
-  ARTIFACTS := preloader.bin bl31-uboot.fip
-endef
-TARGET_DEVICES += airoha_an7581-evb-emmc-kite
+TARGET_DEVICES += airoha_an7581-evb-multievb
 
 define Device/gemtek_w1700k-ubi
   DEVICE_VENDOR := Gemtek
@@ -135,7 +114,7 @@ define Device/nokia_valyrian
     kmod-i2c-gpio kmod-iio-richtek-rtq6056 \
     kmod-sfp aeonsemi-as21xxx-firmware \
     kmod-mt7996-firmware airoha-en7581-mt7996-npu-firmware \
-    kmod-usb3
+    kmod-usb3 automount
   ARTIFACT/preloader.bin := an7581-preloader nokia_valyrian
   ARTIFACT/bl31-uboot.fip := an7581-bl31-uboot nokia_valyrian
   ARTIFACTS := preloader.bin bl31-uboot.fip
@@ -151,7 +130,7 @@ define Device/nokia_xg-040g-md-common
   UBINIZE_OPTS := -E 5
   DEVICE_PACKAGES := kmod-gpio-button-hotplug kmod-leds-gpio \
 	kmod-phy-airoha-en8811h kmod-regulator-userspace-consumer \
-	kmod-usb-ledtrig-usbport kmod-usb3 kmod-airoha-en7572 \
+	kmod-usb-ledtrig-usbport kmod-usb3 automount kmod-airoha-en7572 \
 	kmod-airoha-xpon airoha-ponctl airoha-pond
 endef
 
@@ -182,9 +161,6 @@ define Device/nokia_xg-040g-md-ubi
 	fit gzip $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb external-static-with-rootfs | \
 	append-metadata
   DEVICE_PACKAGES += fitblk
-  ARTIFACT/bl31-uboot.fip := an7581-bl31-uboot nokia_xg-040g-md
-  ARTIFACT/preloader.bin := an7581-preloader nokia_xg-040g-md
-  ARTIFACTS := bl31-uboot.fip preloader.bin
 endef
 TARGET_DEVICES += nokia_xg-040g-md-ubi
 
@@ -267,11 +243,6 @@ TARGET_DEVICES += gemtek_xr1710g-ubi
 
 define Device/gemtek_xg2010g-common
   DEVICE_VENDOR := Gemtek
-  DEVICE_COMPAT_VERSION := 2.0
-  DEVICE_COMPAT_MESSAGE := Firmware requires the XG2010G OpenWrt U-Boot UBI layout \
-       with bl2 at 0x00000000 and ubi starting at 0x00020000, containing \
-       fip, ubootenv, ubootenv2, factory and fit. Do not force an upgrade from \
-       the legacy 0x00600000 layout. Preserve bl2 and the boot/calibration volumes.
   DEVICE_PACKAGES := fitblk kmod-leds-gpio kmod-gpio-button-hotplug \
 	kmod-phy-airoha-en8811h kmod-phy-realtek rtl826x-firmware \
 	kmod-nf-conntrack-bridge kmod-nft-bridge \
@@ -295,25 +266,42 @@ define Device/gemtek_xg2010g-common
   SOC := an7581
 endef
 
+define Device/gemtek_xg2010g-ubi-common
+  # Only the UBI layout keeps everything but the preloader inside the UBI
+  # volumes, so the 2.0 compat version and its warning belong to the -ubi
+  # variants rather than to the vendor layout of Device/gemtek_xg2010g.
+  DEVICE_VARIANT := UBI
+  DEVICE_COMPAT_VERSION := 2.0
+  DEVICE_COMPAT_MESSAGE := Firmware requires the XG2010G OpenWrt U-Boot UBI layout \
+       with bl2 at 0x00000000 and ubi starting at 0x00020000, containing \
+       fip, ubootenv, ubootenv2, factory and fit. Do not force an upgrade from \
+       the legacy 0x00600000 layout. Preserve bl2 and the boot/calibration volumes.
+endef
+
+define Device/gemtek_xg2010g
+  # DEVICE_DTS must be set before the common block: the common IMAGE line
+  # uses := and freezes $(firstword $(DEVICE_DTS)) at eval time.
+  DEVICE_DTS := an7581-xg2010g
+  $(call Device/gemtek_xg2010g-common)
+  DEVICE_MODEL := XG2010G
+  SUPPORTED_DEVICES := gemtek,xg2010g
+endef
+TARGET_DEVICES += gemtek_xg2010g
+
 define Device/gemtek_xg2010g-ubi
   # DEVICE_DTS must be set before the common block: the common IMAGE line
   # uses := and freezes $(firstword $(DEVICE_DTS)) at eval time.
   DEVICE_DTS := an7581-gemtek-xg2010g-ubi
   $(call Device/gemtek_xg2010g-common)
+  $(call Device/gemtek_xg2010g-ubi-common)
   DEVICE_MODEL := XG2010G
-  DEVICE_VARIANT := UBI
-  SUPPORTED_DEVICES := gemtek,xg2010g-ubi gemtek,xg2010g
+  # One image covers the 1 GiB and 2 GiB boards: U-Boot publishes the DRAM
+  # size detected by BL2, which overrides the fallback in the device tree.
+  # The 2 GiB compatibles are kept so upgrades from the old variant work.
+  SUPPORTED_DEVICES := gemtek,xg2010g-ubi gemtek,xg2010g \
+	gemtek,xg2010g-2g-ubi gemtek,xg2010g-2g
 endef
 TARGET_DEVICES += gemtek_xg2010g-ubi
-
-define Device/gemtek_xg2010g-2g-ubi
-  DEVICE_DTS := an7581-gemtek-xg2010g-2g-ubi
-  $(call Device/gemtek_xg2010g-common)
-  DEVICE_MODEL := XG2010G (2 GiB)
-  DEVICE_VARIANT := UBI
-  SUPPORTED_DEVICES := gemtek,xg2010g-2g-ubi gemtek,xg2010g-2g
-endef
-TARGET_DEVICES += gemtek_xg2010g-2g-ubi
 
 define Device/quantum_q1000k-ubi
   DEVICE_VENDOR := Quantum Fiber

@@ -36,7 +36,6 @@ endef
 define U-Boot/an7581_nokia_xg-040g-md
   NAME:=Nokia XG-040G-MD
   UBOOT_CONFIG:=an7581_nokia_xg-040g-md
-  BUILD_DEVICES:=nokia_xg-040g-md-ubi
   BUILD_SUBTARGET:=an7581
   BL2_IMAGE:=an7581-bl2.bin
   BL31_IMAGE:=an7581-bl31.bin
@@ -45,7 +44,7 @@ endef
 define U-Boot/an7581_rfb
   NAME:=AN7581 Reference Board
   UBOOT_CONFIG:=an7581_evb
-  BUILD_DEVICES:=airoha_an7581-evb airoha_an7581-evb-emmc-eagle airoha_an7581-evb-emmc-kite
+  BUILD_DEVICES:=airoha_an7581-evb-multievb
   BUILD_SUBTARGET:=an7581
   BL2_IMAGE:=an7581-bl2.bin
   BL31_IMAGE:=an7581-bl31.bin
@@ -65,7 +64,7 @@ endef
 define U-Boot/an7583_rfb
   NAME:=AN7583 Reference Board
   UBOOT_CONFIG:=an7583_evb
-  BUILD_DEVICES:=airoha_an7583-evb airoha_an7583-evb-emmc
+  BUILD_DEVICES:=airoha_an7583-evb-multievb
   BUILD_SUBTARGET:=an7583
   BL2_IMAGE:=an7583-bl2.bin
   BL31_IMAGE:=an7583-bl31.bin
@@ -94,6 +93,8 @@ UBOOT_CUSTOMIZE_CONFIG := \
 	--disable TOOLS_KWBIMAGE \
 	--disable TOOLS_LIBCRYPTO \
 	--disable TOOLS_MKEFICAPSULE \
+	--enable DM_RNG \
+	--enable RNG_AIROHA \
 	--enable SERIAL_RX_BUFFER \
 	--set-val SERIAL_RX_BUFFER_SIZE 256
 

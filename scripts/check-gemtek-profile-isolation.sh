@@ -48,6 +48,11 @@ for manifest in "${manifests[@]}"; do
 	}
 done
 
+if ! grep -Eq '^CONFIG_(TARGET_airoha_an7581_DEVICE|TARGET_DEVICE_airoha_an7581_DEVICE)_gemtek_[a-z0-9_.-]+=y$' "$config_file"; then
+	echo "no Gemtek profile selected in $config_file; Gemtek profile isolation is not applicable"
+	exit 0
+fi
+
 if grep -Eq '^CONFIG_(TARGET_airoha_an7581_DEVICE|TARGET_DEVICE_airoha_an7581_DEVICE)_gemtek_xr1710g(-ubi)?=y$' "$config_file"; then
 	profile="xr1710g"
 	forbidden_packages='(airoha-pon(firmware|manager)|airoha-ponctl|airoha-pond|luci-app-(pon|onu)|kmod-airoha-(xpon-en757x|pon-plugins|pon-dataplane|xpon-igmp|gpon-igmp|en7572|xpon|tod|en7581-pcm-spi))'
@@ -108,14 +113,10 @@ if [[ -n "$kernel_config" ]]; then
 		failed=1
 	fi
 
-	# A required symbol only has to be enabled: the forbidden-symbol check
-	# above already accepts (y|m), and OpenWrt kernels legitimately build
-	# drivers as modules.
 	while IFS= read -r required; do
 		[[ -n "$required" ]] || continue
-		name="${required%%=*}"
-		if ! grep -Eq "^${name}=(y|m)$" "$kernel_config"; then
-			echo "$profile kernel is missing required symbol: $required (found: $(grep -E "^${name}=" "$kernel_config" || echo 'not set'))" >&2
+		if ! grep -Eq "^${required}$" "$kernel_config"; then
+			echo "$profile kernel is missing required symbol: $required" >&2
 			failed=1
 		fi
 	done < <(tr '|' '\n' <<<"$required_kernel")

@@ -50,6 +50,7 @@ run_build() {
 		./scripts/feeds install -a
 	fi
 
+	FEED_PATCHES_STRICT=1 bash scripts/select-feed-providers.sh
 	FEED_PATCHES_STRICT=1 bash scripts/apply-feed-patches.sh
 
 	bash scripts/fix-stale-golang-host.sh
@@ -57,6 +58,7 @@ run_build() {
 	cp "$config_seed" .config
 	bash scripts/set-build-version.sh .config
 	make defconfig
+	bash scripts/check-distfeeds.sh
 	bash scripts/check-gemtek-profile-isolation.sh --config .config
 
 	case "$mode" in
@@ -73,7 +75,7 @@ run_build() {
 			;;
 	esac
 
-	kernel_config="$(find build_dir/target-aarch64_cortex-a53_musl/linux-airoha_an7581 -path '*/linux-*/.config' -print -quit)"
+	kernel_config="$(find build_dir/target-aarch64_cortex-a53_musl/linux-airoha_an7581 -maxdepth 2 -name .config -print -quit)"
 	[[ -n "$kernel_config" ]] || {
 		echo "kernel config was not generated" >&2
 		exit 1

@@ -10,6 +10,7 @@ define KernelPackage/drm-rockchip
   KCONFIG:= \
 	CONFIG_DRM_ROCKCHIP \
 	CONFIG_DRM_BRIDGE=y \
+	CONFIG_DRM_AUX_BRIDGE=y \
 	CONFIG_DRM_LOAD_EDID_FIRMWARE=y \
 	CONFIG_DRM_PANEL=y \
 	CONFIG_DRM_PANEL_BRIDGE=y \
@@ -284,3 +285,72 @@ define KernelPackage/rockchip-dfi
 endef
 
 $(eval $(call KernelPackage,rockchip-dfi))
+
+define KernelPackage/video-rockchip-isp2
+  TITLE:=Rockchip rkisp2 Image Signal Processor
+  DEPENDS:=@TARGET_rockchip +kmod-video-v4l2-isp \
+	+kmod-video-dma-contig +kmod-video-fwnode +kmod-video-vmalloc
+  KCONFIG:=CONFIG_VIDEO_ROCKCHIP_ISP2
+  FILES:=$(LINUX_DIR)/drivers/media/platform/rockchip/rkisp2/rockchip-isp2.ko
+  AUTOLOAD:=$(call AutoProbe,rockchip-isp2)
+  $(call AddDepends/video)
+endef
+
+define KernelPackage/video-rockchip-isp2/description
+  Driver for the Image Signal Processor found in the Rockchip RK3588
+  and RV1126 SoCs. Provides demosaicing, 3A statistics and the
+  parameters queue used by libcamera.
+endef
+
+$(eval $(call KernelPackage,video-rockchip-isp2))
+
+define KernelPackage/video-rockchip-ispp
+  TITLE:=Rockchip rkispp Image Post-Processing unit
+  DEPENDS:=@TARGET_rockchip +kmod-video-rockchip-isp2 +kmod-video-mem2mem \
+	+kmod-video-dma-contig +kmod-video-fwnode +kmod-video-vmalloc
+  KCONFIG:=CONFIG_VIDEO_ROCKCHIP_ISPP \
+	CONFIG_VIDEO_ROCKCHIP_ISPP_FEC=y
+  FILES:=$(LINUX_DIR)/drivers/media/platform/rockchip/ispp/video-rkispp.ko
+  AUTOLOAD:=$(call AutoProbe,video-rkispp)
+  $(call AddDepends/video)
+endef
+
+define KernelPackage/video-rockchip-ispp/description
+  Driver for the Image Post-Processing unit of the Rockchip RV1126:
+  temporal and spatial noise reduction, sharpening, fisheye
+  correction and the scaled outputs fed by the rkisp2 ISP.
+endef
+
+$(eval $(call KernelPackage,video-rockchip-ispp))
+
+define KernelPackage/video-rockchip-rkvenc
+  TITLE:=Rockchip RKVENC H.264/HEVC video encoder
+  DEPENDS:=@TARGET_rockchip +kmod-video-mem2mem +kmod-video-dma-contig
+  KCONFIG:=CONFIG_VIDEO_ROCKCHIP_RKVENC
+  FILES:=$(LINUX_DIR)/drivers/media/platform/rockchip/rkvenc/rockchip-rkvenc.ko
+  AUTOLOAD:=$(call AutoProbe,rockchip-rkvenc)
+  $(call AddDepends/video)
+endef
+
+define KernelPackage/video-rockchip-rkvenc/description
+  Stateful V4L2 memory-to-memory encoder driver for the RKVENC v1 video
+  encoder of the Rockchip RV1126 and RK3568 SoCs (H.264 and HEVC).
+endef
+
+$(eval $(call KernelPackage,video-rockchip-rkvenc))
+
+define KernelPackage/phy-rockchip-usbdp
+  SUBMENU:=$(USB_MENU)
+  TITLE:=Rockchip USBDP COMBO PHY Driver
+  DEPENDS:=@TARGET_rockchip_armv8
+  KCONFIG:=CONFIG_PHY_ROCKCHIP_USBDP
+  FILES:=$(LINUX_DIR)/drivers/phy/rockchip/phy-rockchip-usbdp.ko
+  AUTOLOAD:=$(call AutoProbe,phy-rockchip-usbdp)
+endef
+
+define KernelPackage/phy-rockchip-usbdp/description
+  Support the Rockchip USB3.0/DP combo PHY with Samsung IP block.
+  This is required for USB3 support on RK3588.
+endef
+
+$(eval $(call KernelPackage,phy-rockchip-usbdp))

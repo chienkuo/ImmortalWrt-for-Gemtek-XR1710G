@@ -2,7 +2,7 @@
 
 > 核实基线：本仓库 `build_dir/replay/linux-6.18.55` 内核树（已应用 `target/linux/generic/pending-6.18/`
 > 与 `target/linux/airoha/patches-6.18/`）、`package/network/config/firewall4/`、
-> `D:/GitData/openwrt-pon-config-enhanced/luci-app-onu`。
+> `feeds/onu_config/luci-app-onu`。
 > 全部结论来自实读源码，非上游文档转述。
 
 ---
@@ -47,7 +47,7 @@
 
 | 补丁 | 作用 |
 |---|---|
-| `675-01-net-export-__dev_fill_forward_path-and-br_fdb_find_rcu.patch` | 导出桥 FDB 查询给卸载层用 |
+| `675-01-net-export-br_fdb_find_rcu.patch` | 导出桥 FDB 查询给卸载层用 |
 | `675-02-nft_flow_offload-add-bridging-support.patch` | **桥检测 + L2 转发路径**（`nft_flow_offload_is_bridging`、FDB 选路、MAC 提取） |
 | `675-03-nft_flow_offload-add-DEV_PATH_MTK_WDMA-path.patch` | WLAN（WDMA）出口路径 |
 | `675-04-nft_flow_offload-add-vlan-passthrough-support.patch` | VLAN 透传 |
@@ -58,11 +58,13 @@
 这些补丁**已应用**到 `build_dir` 内核树（`nf_flow_table_path.c` 中 `nft_flow_offload_is_bridging`
 在 77/316/554 行可见；`nf_conntrack_bridge.c` 中 `pppoe_present` / `PPPOE_SES_HLEN` 在 261-296、478-484 行可见）。
 
-**userspace 侧**：`package/network/config/firewall4/patches/001-add-bridge-flowtable-support.patch`
-已经会在 offload device 集合含桥端口时生成 `table bridge fw4 { flowtable fb ... }`，
-并有 `supports_bridge_flowtable()` 用 `nft -c` 探测——不支持时静默回落。
+**userspace 侧**：原先的 `package/network/config/firewall4/patches/001-add-bridge-flowtable-support.patch`
+已移除。内核 6.18.55 没有 `NFPROTO_BRIDGE` 类型的 flowtable 后端，且
+`nft_flow_offload_validate()` 拒绝 IPv4/IPv6/INET 之外的 family，因此
+`table bridge fw4 { flowtable fb ... }` 不可能生效，保留只会产生恒空的表。
 
-**所以桥 flowtable 生成链路是通的；卡点只在 `CONFIG_BRIDGE_NETFILTER` / `CONFIG_NF_FLOW_TABLE` 未开。**
+**所以桥流量的硬件加速不走 flowtable**，而是由 AN7581 native L2B 的 QDMA RX
+punt 学习路径完成（见 `docs/airoha-bridge-flowtable-offload.md`）。
 
 ### 3. FLOW_ACTION_PPPOE_PUSH —— ⚠️ 机制存在，但**前提是桥上 conntrack 能解析 PPPoE**
 
@@ -229,7 +231,9 @@ conntrack -L -o extended | grep -c HW_OFFLOAD
 # 4. PPE 里有 BRIDGE 表项（含 pppoe_id）
 mount -t debugfs none /sys/kernel/debug 2>/dev/null
 cat /sys/kernel/debug/ppe/entries | grep -i L2B | head
-cat /sys/kernel/debug/ppe/bind
+cat /sys/kernel/debug/ppe/bind              # 聚合视图，含 DRAM 表项
+cat /sys/kernel/debug/ppe/cdm1/bind         # 仅 CDM1 所属 SRAM 表项
+cat /sys/kernel/debug/ppe/cdm2/bind         # 仅 CDM2 所属 SRAM 表项（AN7581 双 PPE）
 
 # 5. 大包验证 MTU（第 4 项是否修好）
 ping -M do -s 1464 -c 3 <对端>    # 1464+8+28 = 1500，PPPoE 满帧

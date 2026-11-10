@@ -6,9 +6,9 @@
 
 1. **流量路径必须是「桥转发」**（`PPE_PKT_TYPE_BRIDGE` / native L2B），而不是三层路由；
    因为拨号主机在桥内，PPPoE 会话终结在主机侧，本机不终结该 PPPoE 会话。
-2. **firewall4 必须下发一条 bridge-family flowtable**（`table bridge fw4 → flowtable fb`，
-   `flags offload`），把 bridge 端口纳入 offload device 集合。仅配 `flow_offloading_hw=1`
-   但只有 `inet` 表时，纯 L2 桥流量不会进 PPE。
+2. **不需要 bridge-family flowtable**：内核 6.18.55 没有 `NFPROTO_BRIDGE`
+   flowtable 后端，`flow offload` 表达式也拒绝该 family。桥接转发由 native L2B
+   的 RX punt 学习路径直接写入 PPE；`flow_offloading_hw` 仅影响 inet 表的路由/NAT。
 3. **TC flower 规则必须携带 `FLOW_ACTION_PPPOE_PUSH` 动作**，驱动据此把 PPPoE
    Session-ID 写进 FOE 的 `pppoe_id` 字段、把 `ib1.PPPOE` 置位、把 L2 etype 设为
    `ETH_P_PPP_SES`。这是「PPPoE 能硬件转发」的关键，普通 L2B 桥转发不涉及这一路。
@@ -143,8 +143,9 @@ config defaults
         option flow_offloading_hw '1'      # ← 生成 `flags offload`，缺此项只会软件加速
 ```
 
-本仓库对 XR1710G 已由 `target/linux/airoha/an7581/base-files/etc/uci-defaults/`
-下的 `18-xr1710g-firewall-defaults` 自动置这两项。
+本仓库对 XG-040G-MD、XG2010G（含 2 GiB 版）与 XR1710G 已由
+`target/linux/airoha/an7581/base-files/etc/uci-defaults/` 下的
+`18-xr1710g-firewall-defaults` 自动置这两项。
 
 ### 4.3 桥/VLAN 配置要点
 
@@ -204,7 +205,8 @@ FIELD_PREP(WAN_MTU0_MASK, netdev->mtu + VLAN_ETH_HLEN)
 
 3. **PPE 里有 FOE（尤其 IB1.PPPOE / pppoe_id）**
    ```
-   cat /sys/kernel/debug/airoha_ppe*/...            # 视 debugfs 节点而定
+   cat /sys/kernel/debug/ppe/entries
+   cat /sys/kernel/debug/ppe/cdm1/bind              # 按引擎拆分，AN7581 另有 cdm2
    ```
    期望：能看到 `PPE_PKT_TYPE_BRIDGE` 表项，且 `pppoe_id` 与现场 SID 一致。
 

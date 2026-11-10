@@ -1,8 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+// SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
 /dts-v1/;
-#include <dt-bindings/leds/common.h>
+
+
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
+#include <dt-bindings/leds/common.h>
 #include <dt-bindings/phy/phy.h>
 #include "an7581.dtsi"
 #include "an7581-npu-mt7996.dtsi"
@@ -11,39 +13,26 @@
 	compatible = "gemtek,xr1710g",
 		     "airoha,an7581", "airoha,en7581";
 	aliases {
-		serial0 = &uart1;
 		led-boot = &led_status_red;
 		led-failsafe = &led_status_blue;
-		led-upgrade = &led_status_blue;
 		led-running = &led_status_green;
+		led-upgrade = &led_status_blue;
+		serial0 = &uart1;
 	};
 	chosen {
 		rootdisk = <&ubi_rootfs>;
-		bootargs = "console=ttyS0,115200 earlycon cpufreq.default_governor=powersave ubi.block=0,fit root=/dev/fit0 rootwait rdinit=/sbin/init";
+		bootargs = "console=ttyS0,115200 earlycon ubi.block=0,fit root=/dev/fit0 rootwait rdinit=/sbin/init";
 		stdout-path = "serial0:115200n8";
 	};
-	reserved-memory {
-		#address-cells = <2>;
-		#size-cells = <2>;
-		ranges;
-
-		ramoops@fff00000 {
-			compatible = "ramoops";
-			reg = <0x0 0xfff00000 0x0 0x100000>;
-			record-size = <0x4000>;
-			console-size = <0x80000>;
-			pmsg-size = <0x20000>;
-		};
-	};
-
-memory@80000000 {
+	memory@80000000 {
 		device_type = "memory";
 		/* The board contains 2 GiB of DRAM. */
 		reg = <0x0 0x80000000 0x0 0x80000000>;
 	};
 	keys {
 		compatible = "gpio-keys";
-		key-restart {
+
+		key-reset {
 			label = "reset";
 			gpios = <&en7581_pinctrl 0 GPIO_ACTIVE_LOW>;
 			linux,code = <KEY_RESTART>;
@@ -51,21 +40,29 @@ memory@80000000 {
 	};
 	leds {
 		compatible = "gpio-leds";
-		led_status_green: led-status-green {
-			label = "status:green";
-			gpios = <&en7581_pinctrl 17 GPIO_ACTIVE_LOW>;
-		};
-		led_status_blue: led-status-blue {
-			label = "status:blue";
-			gpios = <&en7581_pinctrl 19 GPIO_ACTIVE_LOW>;
-		};
+
 		led_status_red: led-status-red {
-			label = "status:red";
+			color = <LED_COLOR_ID_RED>;
+			function = LED_FUNCTION_STATUS;
 			gpios = <&en7581_pinctrl 29 GPIO_ACTIVE_LOW>;
 			default-state = "on";
 		};
+
+		led_status_green: led-status-green {
+			color = <LED_COLOR_ID_GREEN>;
+			function = LED_FUNCTION_STATUS;
+			gpios = <&en7581_pinctrl 17 GPIO_ACTIVE_LOW>;
+		};
+
+		led_status_blue: led-status-blue {
+			color = <LED_COLOR_ID_BLUE>;
+			function = LED_FUNCTION_STATUS;
+			gpios = <&en7581_pinctrl 19 GPIO_ACTIVE_LOW>;
+		};
+		
 		led_status_white: led-status-white {
-			label = "status:white";
+			color = <LED_COLOR_ID_WHITE>;
+			function = LED_FUNCTION_STATUS;
 			gpios = <&en7581_pinctrl 20 GPIO_ACTIVE_LOW>;
 		};
 	};
@@ -143,15 +140,25 @@ memory@80000000 {
 		#address-cells = <1>;
 		#size-cells = <1>;
 		partition@0 {
-			label = "vendor";
-			reg = <0x00000000 0x00600000>;
+			label = "bootloader";
+			reg = <0x00000000 0x00200000>;
+			read-only;
+		};
+
+		partition@200000 {
+			label = "uenv";
+			reg = <0x00200000 0x00200000>;
+		};
+
+		partition@400000 {
+			label = "dsd";
+			reg = <0x00400000 0x00200000>;
 			/*
-			 * Intentionally NOT marked read-only so the factory
-			 * provisioning data at offset 0x400000 (MAC addresses,
-			 * serial number, Wi-Fi defaults, admin credentials, ...)
-			 * can be rewritten from the luan-app-airoha-factory LuCI
-			 * page.  Re-add "read-only;" here if the partition should
-			 * be locked down again.
+			 * Factory provisioning data: MAC addresses, serial number,
+			 * Wi-Fi defaults, admin credentials, ...  Intentionally NOT
+			 * marked read-only so it can be rewritten from the
+			 * luan-app-airoha-factory LuCI page.  Re-add "read-only;"
+			 * here if the partition should be locked down again.
 			 */
 		};
 		partition@600000 {
@@ -201,10 +208,18 @@ memory@80000000 {
 			reg = <0x0 0x1e00>;
 		};
 		wan_mac: macaddr@5000 {
+			/*
+			 * WAN uses this base at +0; LAN/Wi-Fi netdevs use lan_mac:
+			 * lan2 = +0, 2.4G = +1, 5G = +2, 6G = +3, cpu = +4,
+			 * lan3 = +5, lan4 = +6, so WAN and lan2 never collide.
+			 * On stock data lan_mac = wan_mac + 1.
+			 */
+			compatible = "mac-base";
 			reg = <0x5000 0x6>;
+			#nvmem-cell-cells = <1>;
 		};
 		lan_mac: macaddr@6000 {
-			/* +0: main LAN2, +1/+2/+3: Wi-Fi bands, +4: CPU. */
+			/* LAN base: LAN/Wi-Fi netdevs derive from here, lan2 = +0. */
 			compatible = "mac-base";
 			reg = <0x6000 0x6>;
 			#nvmem-cell-cells = <1>;
@@ -212,6 +227,7 @@ memory@80000000 {
 	};
 };
 &i2c0 {
+	clock-frequency = <400000>;
 	status = "okay";
 	hwmon@2e {
 		compatible = "nuvoton,nct7802";
@@ -291,52 +307,6 @@ memory@80000000 {
 	pinctrl-0 = <&pcie2_rst_pins>;
 };
 
-&cpufreq {
-	reg = <0x0 0x1fa20000 0x0 0x2c0
-	       0x0 0x1efbe000 0x0 0x800>;
-	reg-names = "chip-scu", "mcucfg";
-	airoha,force-direct-pll;
-};
-
-&cpu_opp_table {
-	opp-1250000000 {
-		opp-hz = /bits/ 64 <1250000000>;
-		required-opps = <&smcc_opp15>;
-	};
-
-	opp-1300000000 {
-		opp-hz = /bits/ 64 <1300000000>;
-		required-opps = <&smcc_opp16>;
-	};
-
-	opp-1350000000 {
-		opp-hz = /bits/ 64 <1350000000>;
-		required-opps = <&smcc_opp17>;
-	};
-
-	opp-1400000000 {
-		opp-hz = /bits/ 64 <1400000000>;
-		required-opps = <&smcc_opp18>;
-	};
-};
-
-&cpu_smcc_opp_table {
-	smcc_opp15: opp15 {
-		opp-level = <15>;
-	};
-
-	smcc_opp16: opp16 {
-		opp-level = <16>;
-	};
-
-	smcc_opp17: opp17 {
-		opp-level = <17>;
-	};
-
-	smcc_opp18: opp18 {
-		opp-level = <18>;
-	};
-};
 &npu {
 	status = "okay";
 };
@@ -383,12 +353,11 @@ memory@80000000 {
 			compatible = "ethernet-phy-ieee802.3-c45";
 			reg = <5>;
 			reset-gpios = <&en7581_pinctrl 46 GPIO_ACTIVE_LOW>;
-			reset-before-id-read;
 			reset-assert-us = <200000>;
 			reset-deassert-us = <200000>;
+			reset-before-id-read;
 			tx-polarity = <PHY_POL_INVERT>;
 			rx-polarity = <PHY_POL_INVERT>;
-			realtek,sds-mode = <0x88c6>;
 			realtek,patch-rtk-serdes;
 		};
 		phy8: ethernet-phy@8 {
@@ -397,9 +366,9 @@ memory@80000000 {
 			reset-gpios = <&en7581_pinctrl 31 GPIO_ACTIVE_LOW>;
 			reset-assert-us = <200000>;
 			reset-deassert-us = <200000>;
+			reset-before-id-read;
 			tx-polarity = <PHY_POL_INVERT>;
 			rx-polarity = <PHY_POL_INVERT>;
-			realtek,sds-mode = <0x88c6>;
 			realtek,patch-rtk-serdes;
 		};
 	};
@@ -430,6 +399,8 @@ memory@80000000 {
 &gsw_port1 {
 	status = "okay";
 	label = "lan3";
+	nvmem-cells = <&lan_mac 5>;
+	nvmem-cell-names = "mac-address";
 };
 &gsw_phy2 {
 	status = "okay";
@@ -457,8 +428,8 @@ memory@80000000 {
 &gsw_port2 {
 	status = "okay";
 	label = "lan4";
-	/* lan4 is the board WAN port, GDM2/phy8 is a br-lan member. */
-	airoha,wan;
+	nvmem-cells = <&lan_mac 6>;
+	nvmem-cell-names = "mac-address";
 };
 &uart2 {
 	status = "okay";
