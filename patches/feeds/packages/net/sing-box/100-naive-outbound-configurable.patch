@@ -1,0 +1,24 @@
+From: local build patch <zjgunks@gmail.com>
+Subject: sing-box: make naive (cronet) outbound configurable
+
+SING_BOX_BUILD_NAIVE_OUTBOUND is a def_bool y, i.e. hard-wired on for
+every architecture outside the mips list. It force-selects libcronet,
+whose build downloads a Chromium x86_64-only clang toolchain, so any
+build on a non-x86_64 host (e.g. arm64) fails unconditionally.
+
+Turn the switch into a user-visible bool with default y so existing
+(x86_64) builds keep naive/cronet enabled unchanged, while hosts that
+cannot run the Chromium toolchain can opt out explicitly.
+
+--- a/net/sing-box/Makefile
++++ b/net/sing-box/Makefile
+@@ -80,7 +80,8 @@
+   depends on $(subst @,,$(GO_ARCH_DEPENDS))
+ 
+   config SING_BOX_BUILD_NAIVE_OUTBOUND
+-  def_bool y
++  bool "build naive (cronet) outbound"
++  default y
+   depends on !(arc||armeb||loongarch64||mips||mips64||powerpc||TARGET_gemini)
+ endef
+ 
