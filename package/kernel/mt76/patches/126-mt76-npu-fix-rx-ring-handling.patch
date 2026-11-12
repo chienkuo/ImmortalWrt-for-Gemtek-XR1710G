@@ -17,7 +17,7 @@ diff --git a/npu.c b/npu.c
  	return nframes;
  }
  
-@@ -67,19 +72,31 @@ static struct sk_buff *mt76_npu_dequeue(struct mt76_dev *dev,
+@@ -67,19 +72,32 @@ static struct sk_buff *mt76_npu_dequeue(struct mt76_dev *dev,
  	int i, nframes, index = q->tail;
  	struct sk_buff *skb = NULL;
  
@@ -55,7 +55,7 @@ diff --git a/npu.c b/npu.c
  		dma_sync_single_for_cpu(dev->dma_dev, e->dma_addr[0],
  					e->dma_len[0],
  					page_pool_get_dma_dir(q->page_pool));
-@@ -108,7 +125,6 @@ static struct sk_buff *mt76_npu_dequeue(struct mt76_dev *dev,
+@@ -108,7 +126,6 @@ static struct sk_buff *mt76_npu_dequeue(struct mt76_dev *dev,
  	}
  	q->tail = index;
  	q->queued -= i;
