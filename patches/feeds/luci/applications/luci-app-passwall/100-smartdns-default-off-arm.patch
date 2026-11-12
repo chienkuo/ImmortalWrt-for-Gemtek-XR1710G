@@ -1,0 +1,19 @@
+From: local build patch <zjgunks@gmail.com>
+Subject: luci-app-passwall: do not default-include SmartDNS on arm64/arm
+
+INCLUDE_SmartDNS defaults to y on aarch64/arm too, force-selecting
+smartdns, whose webui build depends on x86_64-only prebuilt npm
+native modules and cannot build on non-x86_64 hosts. Keep the
+default on i386/x86_64 (existing builds unchanged) and let arm hosts
+opt in explicitly.
+
+--- a/applications/luci-app-passwall/Makefile
++++ b/applications/luci-app-passwall/Makefile
+@@ -91,7 +91,7 @@
+ 
+ config PACKAGE_$(PKG_NAME)_INCLUDE_SmartDNS
+ 	bool "Include SmartDNS"
+-	default y if aarch64||arm||i386||x86_64
++	default y if i386||x86_64
+ 
+ 
