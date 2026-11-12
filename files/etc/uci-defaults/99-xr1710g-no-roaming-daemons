@@ -1,0 +1,19 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# XR1710G is a single-unit board: the 802.11kv/r roaming daemons that
+# luci-app-mesh-conf pulls in (dawn, usteer) only fight the clients here.
+# dawn answered the 11v beacon requests with a BEACON-REQ storm and usteer
+# kept band-steering clients off a healthy 5 GHz association; both were
+# measured adding 40-120 ms ping latency.  Keep the packages (the meshconf
+# page still manages them if an owner ever really wants mesh) but never
+# autostart them.  Re-enabling from the UI or by hand is respected: this
+# runs exactly once, at first boot of a fresh image.
+
+for svc in dawn usteer; do
+	[ -x "/etc/init.d/$svc" ] || continue
+	/etc/init.d/$svc stop 2>/dev/null
+	/etc/init.d/$svc disable 2>/dev/null
+done
+
+exit 0
