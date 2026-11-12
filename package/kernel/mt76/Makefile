@@ -13,6 +13,13 @@ PKG_SOURCE_VERSION:=0936617dc529ff9da0385221d3fa6de732231177
 PKG_MIRROR_HASH:=3a3844097e66021f21f0ec8508cb740ef6536a2243f74c47fd5a898edb26839f
 
 PKG_MAINTAINER:=Felix Fietkau <nbd@nbd.name>
+
+# Board-matched MT7996 RF blobs (see files/firmware/mt7996/README.md).
+# Kernel packages never copy files/ into PKG_BUILD_DIR, so resolve the
+# directory at parse time (CURDIR = package dir) and override the
+# upstream blobs during install when present.
+MT7996_BOARD_FIRMWARE_DIR := $(wildcard $(CURDIR)/files/firmware/mt7996)
+
 PKG_USE_NINJA:=0
 PKG_BUILD_PARALLEL:=1
 
@@ -728,6 +735,7 @@ define KernelPackage/mt7996-firmware-common/install
 	cp \
 		$(PKG_BUILD_DIR)/firmware/mt7996/mt7996_dsp.bin \
 		$(1)/lib/firmware/mediatek/mt7996
+	$(if $(MT7996_BOARD_FIRMWARE_DIR),cp -f $(MT7996_BOARD_FIRMWARE_DIR)/*.bin $(1)/lib/firmware/mediatek/mt7996/)
 endef
 
 define KernelPackage/mt7996-firmware/install
@@ -739,6 +747,7 @@ define KernelPackage/mt7996-firmware/install
 		$(PKG_BUILD_DIR)/firmware/mt7996/mt7996_wa.bin \
 		$(PKG_BUILD_DIR)/firmware/mt7996/mt7996_wm.bin \
 		$(1)/lib/firmware/mediatek/mt7996
+	$(if $(MT7996_BOARD_FIRMWARE_DIR),cp -f $(MT7996_BOARD_FIRMWARE_DIR)/*.bin $(1)/lib/firmware/mediatek/mt7996/)
 endef
 
 define KernelPackage/mt7996-233-firmware/install
