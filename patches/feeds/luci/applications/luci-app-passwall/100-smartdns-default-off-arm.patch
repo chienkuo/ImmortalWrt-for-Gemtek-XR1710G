@@ -16,4 +16,5 @@ opt in explicitly.
 -	default y if aarch64||arm||i386||x86_64
 +	default y if i386||x86_64
  
- 
+ config PACKAGE_$(PKG_NAME)_INCLUDE_V2ray_Geodata
+ 	bool "Include V2ray_Geodata"
