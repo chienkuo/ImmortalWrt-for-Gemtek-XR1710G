@@ -188,14 +188,6 @@ function iface_add(phy, config, phy_status)
 	if (!phy_status)
 		return true;
 
-	// Throttle multi-VAP interface creation to avoid ENFILE/ENOBUFS
-	if (length(config?.bss ?? []) > 6) {
-		let bss_added = hostapd.data.bss_add_count ?? 0;
-		hostapd.data.bss_add_count = bss_added + 1;
-		if (bss_added % 3 === 0)
-			hostapd.msleep(200);
-	}
-
 	let iface = hostapd.interfaces[phy];
 	if (!iface)
 		return false;
@@ -532,11 +524,6 @@ function iface_restart(phydev, config, old_config)
 
 	iface_remove(old_config);
 	iface_remove(config);
-
-	// Allow kernel time to complete interface teardown before creating new ones
-	// Prevents ENFILE race on multi-VAP devices (e.g. MT7996 with 12+ interfaces)
-	if (length(old_config?.bss ?? []) + length(config?.bss ?? []) > 6)
-		hostapd.msleep(400);
 
 	// an aborted setup can have stopped wpa_supplicant
 	if (!config.bss || !config.bss[0]) {

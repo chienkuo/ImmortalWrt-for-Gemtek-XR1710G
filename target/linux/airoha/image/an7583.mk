@@ -50,6 +50,7 @@ endef
 define Device/nokia_xg-040g-mf
   $(call Device/nokia_xg-040g-mf-common)
   DEVICE_DTS := an7583-nokia_xg-040g-mf
+  DEVICE_DTS_CONFIG := config@1
   IMAGE_SIZE := 131968k
   KERNEL_SIZE := 8192k
   IMAGES += factory-kernel.bin factory-rootfs.bin

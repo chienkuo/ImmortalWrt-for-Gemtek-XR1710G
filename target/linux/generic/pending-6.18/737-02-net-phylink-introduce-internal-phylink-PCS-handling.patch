@@ -171,7 +171,7 @@ Signed-off-by: Christian Marangi <ansuelsmth@gmail.com>
 +	if (pl->mac_ops->mac_select_pcs) {
 +		pcs = pl->mac_ops->mac_select_pcs(pl->config,
 +						  interface);
-+		pcs_found = !IS_ERR_OR_NULL(pcs);
++		pcs_found = !!pcs;
 +	} else if (test_bit(interface, pl->config->pcs_interfaces)) {
 +		list_for_each_entry(pcs, &pl->pcs_list, list) {
 +			if (!phylink_validate_pcs_interface(pcs, interface)) {
