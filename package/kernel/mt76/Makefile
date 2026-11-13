@@ -1,16 +1,23 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=mt76
-PKG_RELEASE:=4
+PKG_RELEASE:=5
 
 PKG_LICENSE:=BSD-3-Clause-Clear
 PKG_LICENSE_FILES:=
 
+# PINNED at 2026-10-08 (467ae2e3) on purpose.  The 2026-10-28 (0936617d) snapshot
+# collapses MT7990 single-die (Gemtek XR1710G) 5 GHz throughput: A/B on identical
+# images, only mt76 swapped - 10-08 = 793 Mbit/s 4-stream, 10-28 = 87 Mbit/s.
+# naoki66's 126..134 stability pack does not fix it (measured 60 Mbit/s with the
+# pack on the same snapshot), so it is dropped here; the 10-08-era patch set is
+# kept and 990 adapts the new kernel-side mtk_wed_device_ppe_check signature.
+# Revisit the pin once upstream fixes the regression.
 PKG_SOURCE_URL:=https://github.com/openwrt/mt76
 PKG_SOURCE_PROTO:=git
-PKG_SOURCE_DATE:=2026-10-28
-PKG_SOURCE_VERSION:=0936617dc529ff9da0385221d3fa6de732231177
-PKG_MIRROR_HASH:=3a3844097e66021f21f0ec8508cb740ef6536a2243f74c47fd5a898edb26839f
+PKG_SOURCE_DATE:=2026-10-08
+PKG_SOURCE_VERSION:=467ae2e3f190baf737e15e318906da0dc7d0ab91
+PKG_MIRROR_HASH:=2456aeba71bcda19445d539c11f165ab79f5c253345e0c6f6b3b506de01c0fdb
 
 PKG_MAINTAINER:=Felix Fietkau <nbd@nbd.name>
 

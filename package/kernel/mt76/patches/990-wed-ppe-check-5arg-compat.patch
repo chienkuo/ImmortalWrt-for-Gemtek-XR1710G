@@ -1,0 +1,9 @@
+--- a/mt7996/mac.c
++++ b/mt7996/mac.c
+@@ -408,5 +408,5 @@
+ 
+ 	mtk_wed_device_ppe_check(&dev->mt76.mmio.wed, skb,
+ 				 FIELD_GET(MT_DMA_PPE_CPU_REASON, info),
+-				 FIELD_GET(MT_DMA_PPE_ENTRY, info));
++				 FIELD_GET(MT_DMA_PPE_ENTRY, info), NULL);
+ }
