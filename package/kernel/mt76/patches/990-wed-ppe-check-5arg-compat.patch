@@ -1,9 +1,44 @@
+From: ImmortalWrt-for-Gemtek-XR1710G <local@localhost>
+Subject: [PATCH] wifi: mt76: mt7996: pass real wcid to mtk_wed_device_ppe_check()
+
+Kernel 6.18.60 extended mtk_wed_device_ppe_check() with a 5th wcid
+argument.  The WED RX owner-match path (drivers/net/ethernet/mediatek/
+mtk_ppe_offload.c: mtk_ppe_owner_match()) compares
+
+	entry->rx_wed_index == wed_index && entry->rx_wcid == wcid
+
+to decide which station owns a PPE flow entry, and mtk_ppe_do_{del,get}_
+entry() records the value into the hardware entry (mtk_ppe.c:997/1083).
+
+Passing NULL (i.e. wcid 0) makes every WED-offloaded station flow claim
+wcid 0 - the broadcast/self slot.  Entries therefore age out and
+unbind/rebind instead of being cleaned up on station teardown: the PPE
+table observed on the XR1710G carried 44 IPv4 entries with only 3 bound,
+plus bogus offloads of broadcast traffic (dst 255.255.255.255) and
+all-zero-destination IPv6 entries.  Flapping between the PPE fast path
+and the CPU path reorders frames, which drains TCP receive buffers and
+presents as video buffering on a link that measures 3 ms / 0% loss.
+
+Pass the station's real wcid instead.  The 2026-10-28 upstream snapshot
+fixes this through mt7996_sta_link(msta, msta->deflink_id) because it
+grew MLO link handling; on this 2026-10-08 snapshot msta->wcid already
+refers to the default link (struct mt7996_sta embeds mt7996_sta_link
+deflink as its first member), so the direct access is the equivalent
+backport.
+
+Verified by A/B: with flow_offloading_hw=1 and the NULL stub, the phone
+session stalls repeatedly; with hardware offload disabled the stall
+disappears; with this patch the entries bind to the per-station wcid.
+
 --- a/mt7996/mac.c
 +++ b/mt7996/mac.c
-@@ -408,5 +408,5 @@
+@@ -406,6 +406,7 @@ mt7996_wed_check_ppe(struct mt7996_dev *dev, struct mt76_queue *q,
  
  	mtk_wed_device_ppe_check(&dev->mt76.mmio.wed, skb,
  				 FIELD_GET(MT_DMA_PPE_CPU_REASON, info),
 -				 FIELD_GET(MT_DMA_PPE_ENTRY, info));
-+				 FIELD_GET(MT_DMA_PPE_ENTRY, info), NULL);
++				 FIELD_GET(MT_DMA_PPE_ENTRY, info),
++				 msta->wcid.idx);
  }
+ 
+ static int

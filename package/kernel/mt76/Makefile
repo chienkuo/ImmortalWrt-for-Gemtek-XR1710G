@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=mt76
-PKG_RELEASE:=5
+PKG_RELEASE:=6
 
 PKG_LICENSE:=BSD-3-Clause-Clear
 PKG_LICENSE_FILES:=
@@ -11,7 +11,7 @@ PKG_LICENSE_FILES:=
 # images, only mt76 swapped - 10-08 = 793 Mbit/s 4-stream, 10-28 = 87 Mbit/s.
 # naoki66's 126..134 stability pack does not fix it (measured 60 Mbit/s with the
 # pack on the same snapshot), so it is dropped here; the 10-08-era patch set is
-# kept and 990 adapts the new kernel-side mtk_wed_device_ppe_check signature.
+# kept and 990 passes the real per-station wcid to the new 5-arg kernel mtk_wed_device_ppe_check (NULL/wcid-0 caused PPE owner-match flapping and frame reorder, A-B proven).
 # Revisit the pin once upstream fixes the regression.
 PKG_SOURCE_URL:=https://github.com/openwrt/mt76
 PKG_SOURCE_PROTO:=git
