@@ -1,0 +1,29 @@
+Subject: [PATCH] net: phy: realtek: disable RTL8261x LED output when turning it off
+
+rtl8261x_led_brightness_set() keeps the per-LED output enable (LCR7
+EN) set for both brightness states and only drives the output level
+low for LED_OFF.  With no link the PHY LED engine stays quiet and the
+manual level holds (verified on an XR1710G lan2 with no cable), but on
+an active link the PHY firmware LED engine keeps re-asserting the
+speed mask and the LCR6 activity-blink bits: the "off" LED comes back
+solid green and the "off" amber keeps blinking with traffic.
+
+Clear EN together with the low level for LED_OFF so the output stage
+is disabled outright; the firmware LED engine cannot light a LED whose
+output is disabled.  LED_ON behaviour is unchanged.
+
+Tested on Gemtek XR1710G (AN7581 + RTL8261BE): wan link stays up,
+both jack LEDs follow LuCI None/off and stay dark; lan2 stays under
+manual control as before.
+---
+--- a/drivers/net/phy/realtek/realtek_main.c
++++ b/drivers/net/phy/realtek/realtek_main.c
+@@ -2462,7 +2462,7 @@
+ 				       enum led_brightness value)
+ {
+ 	struct rtl8261x_priv *priv = phydev->priv;
+-	u16 lcr7 = RTL822X_VND2_LED_EN(index);
++	u16 lcr7 = value == LED_OFF ? 0 : RTL822X_VND2_LED_EN(index);
+ 	bool active_low, on;
+ 	int ret;
+ 
