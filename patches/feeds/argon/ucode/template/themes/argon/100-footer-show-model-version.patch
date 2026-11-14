@@ -10,9 +10,12 @@ the naoki66 release downloads page instead of version.disturl.
 Both footer files are touched by every footer change, so the two edits are
 kept in a single patch: two patches over the same hunks cannot be applied
 idempotently by scripts/apply-feed-patches.sh.
+Rebased 2026-11-14 onto jerrykuku/luci-theme-argon a121960 (v3.1.4):
+footer_login.ut gained ucode comment trim markers (-#}) above the
+touched block, breaking the old hunk context.
 ---
 diff --git a/ucode/template/themes/argon/footer.ut b/ucode/template/themes/argon/footer.ut
-index 58a5bdc..6fb7e6a 100644
+index d2413d8..d0a74ca 100644
 --- a/ucode/template/themes/argon/footer.ut
 +++ b/ucode/template/themes/argon/footer.ut
 @@ -19,15 +19,7 @@
@@ -33,7 +36,7 @@ index 58a5bdc..6fb7e6a 100644
  				<ul class="breadcrumb pull-right" id="modemenu" style="display:none"></ul>
  			</div>
 diff --git a/ucode/template/themes/argon/footer_login.ut b/ucode/template/themes/argon/footer_login.ut
-index d2e6142..1689121 100644
+index e213006..36e16c2 100644
 --- a/ucode/template/themes/argon/footer_login.ut
 +++ b/ucode/template/themes/argon/footer_login.ut
 @@ -18,15 +18,10 @@
@@ -52,5 +55,5 @@ index d2e6142..1689121 100644
 -	<a href="{{ version.disturl }}" target="_blank" title="{{ entityencode(firmware_info, true) }}">{{ firmware_info }}</a>
 +	<a href="https://github.com/naoki66/ImmortalWrt-for-Gemtek-brightspeed/releases" target="_blank" title="{{ entityencode(firmware_info, true) }}">{{ firmware_info }}</a>
  </footer>
- </div>
+ </main>
  </div>
