@@ -1,0 +1,83 @@
+diff --git a/luci-app-airoha-factory/root/usr/libexec/rpcd/luci.airoha_factory b/luci-app-airoha-factory/root/usr/libexec/rpcd/luci.airoha_factory
+index ec1897a..e1ed904 100755
+--- a/luci-app-airoha-factory/root/usr/libexec/rpcd/luci.airoha_factory
++++ b/luci-app-airoha-factory/root/usr/libexec/rpcd/luci.airoha_factory
+@@ -130,20 +130,37 @@ find_ubi_factory()
+ 	return 1
+ }
+ 
++# Chainloader-layout devices report board_name "gemtek,xr1710g" (no -ubi
++# suffix) yet carry raw WAN/LAN MAC cells at 0x5000/0x6000 of the UBI
++# "factory" volume and have no legacy "vendor" MTD partition.  Select an
++# ubi_raw layout at load time: device lookup and writability follow the UBI
++# volume while MAC read/write keeps the legacy raw (hex) branch.
++if [ "$FACTORY_LAYOUT" = "legacy" ] && ! grep -q '"vendor"' /proc/mtd 2>/dev/null; then
++	if find_ubi_factory >/dev/null 2>&1; then
++		FACTORY_LAYOUT="ubi_raw"
++	fi
++fi
++
+ find_factory_dev()
+ {
+-	if [ "$FACTORY_LAYOUT" = "dsd" ]; then
++	case "$FACTORY_LAYOUT" in
++	dsd|ubi_raw)
+ 		find_ubi_factory
+-	else
++		;;
++	*)
+ 		find_mtd_dev
+-	fi
++		;;
++	esac
+ }
+ 
+ read_factory_data()
+ {
+ 	local dev="$1" tmp="$2"
+ 
+-	if [ "$FACTORY_LAYOUT" = "dsd" ]; then
++	if [ "$FACTORY_LAYOUT" = "ubi_raw" ]; then
++		# No key=value text block: MACs live as raw cells at 0x5000/0x6000.
++		: > "$tmp"
++	elif [ "$FACTORY_LAYOUT" = "dsd" ]; then
+ 		dd if="$dev" of="$tmp" bs=65536 count=2 2>/dev/null
+ 	else
+ 		dd if="$dev" of="$tmp" bs=65536 skip=64 count=2 2>/dev/null
+@@ -424,7 +441,7 @@ get_status()
+ 		fi
+ 		return
+ 	}
+-	if [ "$FACTORY_LAYOUT" = "dsd" ]; then
++	if [ "$FACTORY_LAYOUT" = "dsd" ] || [ "$FACTORY_LAYOUT" = "ubi_raw" ]; then
+ 		writable=1
+ 	else
+ 		mtd_writable "$dev" && writable=1
+@@ -532,6 +549,27 @@ set_factory()
+ 			;;
+ 	esac
+ 
++	if [ "$FACTORY_LAYOUT" = "ubi_raw" ]; then
++		ubi_factory="$(find_ubi_factory 2>/dev/null)" || ubi_factory=""
++		[ -n "$ubi_factory" ] || {
++			printf '{"success":false,"error":"UBI factory volume not found"}'
++			return
++		}
++
++		# Raw cells only: this layout has no vendor fw_env area (the
++		# chainloader environment lives in the UBI ubootenv volumes and is
++		# owned by luci.airoha_recovery), so ethaddr/oui stay untouched.
++		ubi_msg="$(write_ubi_factory_macs "$ubi_factory" "$wan" "$lan")"
++		env_msg="skipped (raw factory cells; U-Boot env is in ubootenv volumes)"
++
++		printf '{"success":true,"wan":"%s","lan":"%s","lan_auto":%s,"ethaddr":"%s","eth_auto":%s,"env":"%s","ubi":"%s"}\n' \
++			"$wan" "$lan" "$lan_auto" "$ethaddr" "$eth_auto" "$env_msg" "$ubi_msg"
++
++		# reboot so the running system picks up the new addresses
++		( sleep 3; /sbin/reboot ) >/dev/null 2>&1 &
++		return
++	fi
++
+ 	if [ "$FACTORY_LAYOUT" = "dsd" ]; then
+ 		ubi_factory="$(find_ubi_factory 2>/dev/null)" || ubi_factory=""
+ 		[ -n "$ubi_factory" ] || {
