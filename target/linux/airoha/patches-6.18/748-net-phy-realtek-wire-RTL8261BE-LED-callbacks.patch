@@ -1,0 +1,37 @@
+Subject: [PATCH] net: phy: realtek: wire RTL8261x LED callbacks for RTL8261BE
+
+The rtl8261x LED support merged in this tree (VEND2 LCR block at
+0xd032/0xd040/0xd044, four LEDs with 5G/10G speed bits) is only wired
+to the RTL8261C/RTL8261CE driver entries.  The RTL8261BE entry added
+by 742-net-phy-realtek-add-5G-and-10G-PHY-support.patch matches the
+same silicon family (per upstream notes, RTL8261N/BE share the RTL8261C
+architecture) but ships no led_* callbacks, so of_phy_leds() ignores
+any DT leds node ("no PHY driver support") and the 10G port LEDs stay
+firmware-owned and invisible to the LED subsystem.
+
+Wire the five existing rtl8261x_led_* callbacks into the BE entry.
+This is the same hardware that upstream tests on a Gemtek W1700K
+(Airoha AN7581) where LED index 2 is the amber and index 3 the green
+LED of each 10G port; the XR1710G uses the same RTL8261BE on mdio 5.
+With DT nodes added, netdev triggers offload to the PHY and no CPU
+cycles are spent blinking.
+
+No behavioural change for boards without a DT leds node under the
+RTL8261BE PHY: phylib only registers LED class devices when one is
+present.
+
+---
+--- a/drivers/net/phy/realtek/realtek_main.c
++++ b/drivers/net/phy/realtek/realtek_main.c
+@@ -4437,6 +4437,11 @@
+ 		.get_wol        = rtl826x_get_wol,
+ 		.get_tunable    = rtl826x_get_tunable,
+ 		.set_tunable    = rtl826x_set_tunable,
++		.led_brightness_set  = rtl8261x_led_brightness_set,
++		.led_hw_is_supported = rtl8261x_led_hw_is_supported,
++		.led_hw_control_get  = rtl8261x_led_hw_control_get,
++		.led_hw_control_set  = rtl8261x_led_hw_control_set,
++		.led_polarity_set    = rtl8261x_led_polarity_set,
+ 	}, {
+ 		.name           = "RTL8261N 10Gbps PHY",
+ 		.config_init    = rtl826x_config_init,

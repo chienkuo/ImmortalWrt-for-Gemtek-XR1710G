@@ -359,6 +359,30 @@
 			tx-polarity = <PHY_POL_INVERT>;
 			rx-polarity = <PHY_POL_INVERT>;
 			realtek,patch-rtk-serdes;
+
+			/* RTL8261BE jack LEDs on the 10G port.  Same index
+			 * map as the Gemtek W1700K (AN7581 + RTL8261CE):
+			 * 2 = amber, 3 = green.  linux,led-devicename keeps
+			 * the sysfs names in the lan3/lan4 style.
+			 */
+			leds {
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				led@2 {
+					reg = <2>;
+					label = "amber";
+					linux,led-devicename = "lan2";
+					status = "okay";
+				};
+
+				led@3 {
+					reg = <3>;
+					label = "green";
+					linux,led-devicename = "lan2";
+					status = "okay";
+				};
+			};
 		};
 		phy8: ethernet-phy@8 {
 			compatible = "ethernet-phy-ieee802.3-c45";
@@ -370,6 +394,28 @@
 			tx-polarity = <PHY_POL_INVERT>;
 			rx-polarity = <PHY_POL_INVERT>;
 			realtek,patch-rtk-serdes;
+
+			/* RTL8261BE jack LEDs on the WAN port (same part
+			 * and index map as phy5/lan2 above).
+			 */
+			leds {
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				led@2 {
+					reg = <2>;
+					label = "amber";
+					linux,led-devicename = "wan";
+					status = "okay";
+				};
+
+				led@3 {
+					reg = <3>;
+					label = "green";
+					linux,led-devicename = "wan";
+					status = "okay";
+				};
+			};
 		};
 	};
 };
