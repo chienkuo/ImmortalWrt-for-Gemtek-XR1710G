@@ -197,7 +197,7 @@ define Device/gemtek_xr1710g-common
   # here would print two menu lines for every XR1710G layout.
   DEVICE_DESCRIPTION := Gemtek XR1710G, also sold as Brightspeed XR1710G
   DEVICE_PACKAGES := airoha-en7581-mt7996-npu-firmware airoha-an7581-mt7996-board \
-		    kmod-nf-conntrack-bridge kmod-nft-bridge \
+		    kmod-nft-bridge \
 		    fitblk uboot-envtools \
 		    kmod-hwmon-nct7802 kmod-mt7996-firmware wpad-mesh-mbedtls \
 		    rtl826x-firmware px5g-mbedtls \
